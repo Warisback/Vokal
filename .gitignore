@@ -1,0 +1,11 @@
+# secrets -- never commit wifi passwords or API keys
+firmware/secrets.h
+
+# build artifacts
+build/
+*.bin
+*.elf
+*.map
+
+# macOS
+.DS_Store
