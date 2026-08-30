@@ -84,10 +84,28 @@ inline bool imuBegin() {
                           SensorQMI8658::ACC_ODR_1000Hz,
                           SensorQMI8658::LPF_OFF);
   qmi.enableAccelerometer();
+  // Gyro stays off in normal operation: it is a third I2C transaction per
+  // poll and nothing in the app needs rotation rate.
+#if IMU_STREAM
   qmi.configGyroscope(SensorQMI8658::GYR_RANGE_1024DPS,
                       SensorQMI8658::GYR_ODR_896_8Hz,
                       SensorQMI8658::LPF_OFF);
   qmi.enableGyroscope();
+#endif
+
+  // Hardware tap engine. This is the fix for the real problem: polling
+  // the IMU fast enough to catch a tap in software (500 Hz, three I2C
+  // transactions each) starved the touch controller on the shared bus.
+  // The QMI8658 detects taps on-die at full ODR; we just read a status
+  // register at UI rate, so the bus stays quiet.
+  //   peakWindow 20, tapWindow 50, dTapWindow 250  -- all @500 Hz ODR
+  //   peakMagThr  = g^2 a strike must reach
+  //   UDMThr      = g^2 below which the puck counts as quiet
+  qmi.configTap(/*priority*/ 0x02, /*peakWindow*/ 20,
+                /*tapWindow*/ 50,  /*dTapWindow*/ 250,
+                /*alpha*/ 0.0625f, /*gamma*/ 0.25f,
+                /*peakMagThr*/ 0.8f, /*UDMThr*/ 0.4f);
+  qmi.enableTap();
   Serial.println("[imu] QMI8658 ready");
   return true;
 }
@@ -97,7 +115,7 @@ inline void imuTick() {
   if (!imuOk) return;
   static uint32_t last = 0;
   uint32_t now = millis();
-  if (now - last < (IMU_STREAM ? 2 : 20)) return;
+  if (now - last < (IMU_STREAM ? 4 : 25)) return;
   last = now;
 
   // Reading without checking data-ready returns stale/garbage registers,
@@ -162,58 +180,20 @@ inline void imuTick() {
     pk = 0; phz = 0;
   }
 #endif
-  // Pulse tracking: measure how long the excursion stays above threshold.
-  static bool     inPulse = false;
-  static uint32_t pulseStart = 0;
-  static float    pulsePeak = 0;
-  bool tapNow = false;
-  uint32_t tapWidth = 0;
-
-  float ahp = fabsf(imuHpZ);
-  if (!inPulse) {
-    if (ahp > TAP_HP_THRESH) { inPulse = true; pulseStart = now; pulsePeak = ahp; }
-  } else {
-    if (ahp > pulsePeak) pulsePeak = ahp;
-    if (ahp < TAP_HP_THRESH * 0.3f) {                 // excursion finished
-      inPulse = false;
-      tapWidth = now - pulseStart;
-      if (tapWidth >= TAP_MIN_WIDTH_MS && tapWidth <= TAP_MAX_WIDTH_MS) {
-        tapNow = true;
-      } else {
+  // Ask the chip whether it saw a tap. One register read, at UI rate.
+  SensorQMI8658::TapEvent ev = qmi.getTapStatus();
+  if (ev == SensorQMI8658::DOUBLE_TAP && imuQuiet) {
+    imuDoubleTap = true;
 #if IMU_STREAM
-        // report rejects too -- seeing WHY something was dropped is most
-        // of what makes these thresholds tunable
-        if (Serial.availableForWrite() > 48)
-          Serial.printf("$R,%lu,%lu,%.2f,wide\n",
-                        (unsigned long)now, (unsigned long)tapWidth, pulsePeak);
+    if (Serial.availableForWrite() > 48) Serial.printf("$T,%lu,2,0,0\n", (unsigned long)now);
 #endif
-      }
-    } else if (now - pulseStart > PULSE_ABORT_MS) {
-      inPulse = false;                                 // sustained motion
+    Serial.println("[imu] double tap");
+  } else if (ev == SensorQMI8658::SINGLE_TAP) {
 #if IMU_STREAM
-      if (Serial.availableForWrite() > 48)
-        Serial.printf("$R,%lu,%lu,%.2f,stuck\n",
-                      (unsigned long)now, (unsigned long)(now - pulseStart), pulsePeak);
+    if (Serial.availableForWrite() > 48) Serial.printf("$T,%lu,1,0,0\n", (unsigned long)now);
 #endif
-    }
   }
 
-  if (tapNow && imuQuiet && now - lastTapMs > TAP_REFRACTORY) {
-    lastTapMs = now;
-    if (firstTapMs && now - firstTapMs < TAP_WINDOW_MS) {
-      imuDoubleTap = true;
-      firstTapMs = 0;
-#if IMU_STREAM
-      if (Serial.availableForWrite() > 48) Serial.printf("$T,%lu,2,%lu,%.2f\n", (unsigned long)now, (unsigned long)tapWidth, pulsePeak);
-#endif
-    } else {
-      firstTapMs = now;
-#if IMU_STREAM
-      if (Serial.availableForWrite() > 48) Serial.printf("$T,%lu,1,%lu,%.2f\n", (unsigned long)now, (unsigned long)tapWidth, pulsePeak);
-#endif
-    }
-  }
-  if (firstTapMs && now - firstTapMs > TAP_WINDOW_MS) firstTapMs = 0;
 
   // ---- orientation, debounced ----
   uint8_t o = imuOrient;

@@ -22,6 +22,21 @@ static void printChipInfo() {
   Serial.println("=======================================");
 }
 
+// All I2C polling lives here, on core 0. A full paint blocks the render
+// core for ~65 ms; polling touch from that same loop meant the device was
+// blind to presses for most of every frame, which is what made the
+// touchscreen feel unresponsive. Nothing on the render core touches I2C.
+static volatile uint32_t sensorLoops = 0, uiLoops = 0;
+
+static void sensorTask(void*) {
+  for (;;) {
+    sensorLoops++;
+    touchPoll();
+    imuTick();
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(400);
@@ -36,11 +51,14 @@ void setup() {
   imuStreamThresholds();
 #endif
 
+  xTaskCreatePinnedToCore(sensorTask, "sensors", 4096, nullptr, 4, nullptr, 0);
+
   uiBegin();
   Serial.println("[main] ready");
 }
 
 void loop() {
+  uiLoops++;
   uiTick();
 
   // Heartbeat: the S3's native USB re-enumerates on reset, so a boot-only
@@ -52,8 +70,12 @@ void loop() {
                   (int)pstate, (int)audRecording, (int)audPaused,
                   (unsigned long)(audLen/1024), (unsigned)audPeak, markCount,
                   (int)imuOk, imuZ, (int)imuFaceDown, (int)imuOrientStable);
-    Serial.printf("[hb] touch samples=%lu hits=%lu last=(%d,%d)\n",
-                  (unsigned long)touchSamples, (unsigned long)touchHits, touchX, touchY);
+    Serial.printf("[hb] touch: i2creads=%lu fingers=%lu badcoord=%lu | gethits=%lu last=(%d,%d)\n",
+                  (unsigned long)tchReads, (unsigned long)tchFingers,
+                  (unsigned long)tchBadCoord, (unsigned long)touchHits, touchX, touchY);
+    Serial.printf("[hb] sensor=%lu/s ui=%lu/s\n",
+                  (unsigned long)(sensorLoops / 2), (unsigned long)(uiLoops / 2));
+    sensorLoops = 0; uiLoops = 0;
   }
   delay(5);
 }

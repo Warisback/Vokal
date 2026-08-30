@@ -178,8 +178,7 @@ inline void uiSplash(const char* msg) {
 inline void uiBegin() {}
 
 inline void uiTick() {
-  touchTick();
-  imuTick();
+  touchTick();   // I2C poll for touch + IMU lives on the sensor task
 
   // flip face-down pauses; face-up resumes
   if (pstate == ST_REC && imuFaceDown != wasFaceDown) {

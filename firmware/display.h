@@ -44,6 +44,9 @@ static std::unique_ptr<Arduino_IIC> touchDev(
     new Arduino_CST816x(iicBus, CST816T_DEVICE_ADDRESS,
                         DRIVEBUS_DEFAULT_VALUE, TP_INT, touchISR));
 static volatile bool touchIrq = false;
+static uint32_t tchReads = 0, tchFingers = 0, tchBadCoord = 0;
+static volatile uint16_t tchX = 0, tchY = 0;
+static volatile uint32_t tchHoldMs = 0;
 static void touchISR(void) { touchIrq = true; }
 
 // ---- colours ---------------------------------------------------------
@@ -121,39 +124,55 @@ struct TftShim {
   // to read, and hold the contact briefly so a press is not missed
   // between UI frames.
   bool getTouch(uint16_t* x, uint16_t* y) {
-    static uint32_t lastHitMs = 0, lastPollMs = 0;
-    static uint16_t lx = 0, ly = 0;
-    // Read on interrupt, but also poll as a backstop: if the controller's
-    // periodic interrupt fails to re-arm, presses vanish entirely.
-    bool doRead = touchIrq || (millis() - lastPollMs > 25);
-    if (doRead) {
-      touchIrq = false;
-      lastPollMs = millis();
-      int32_t n = touchDev->IIC_Read_Device_Value(
-            touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER);
-      if (n > 0) {
-        int32_t tx = touchDev->IIC_Read_Device_Value(
-              touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
-        int32_t ty = touchDev->IIC_Read_Device_Value(
-              touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
-        if (tx >= 0 && ty >= 0) {
-          lx = (uint16_t)tx; ly = (uint16_t)ty; lastHitMs = millis();
-#if TOUCH_DEBUG
-          if (Serial.availableForWrite() > 32) Serial.printf("[touch] raw %ld,%ld\n", (long)tx, (long)ty);
-#endif
-        }
-      }
-    }
-    if (lastHitMs && millis() - lastHitMs < 80) { *x = lx; *y = ly; return true; }
+    if (tchHoldMs && millis() - tchHoldMs < 80) { *x = tchX; *y = tchY; return true; }
     return false;
   }
   bool touch() { return true; }
 };
 static TftShim tft;
 
+// Runs on the sensor task, never on the render core: a full paint blocks
+// for ~65 ms, and polling touch from that same loop left the device blind
+// to presses for most of every frame.
+inline void touchPoll() {
+  {
+    static uint32_t lastPollMs = 0;
+    // Read on interrupt, but also poll as a backstop: if the controller's
+    // periodic interrupt fails to re-arm, presses vanish entirely.
+    bool doRead = touchIrq || (millis() - lastPollMs > 10);
+    if (doRead) {
+      touchIrq = false;
+      lastPollMs = millis();
+      tchReads++;
+      int32_t n = touchDev->IIC_Read_Device_Value(
+            touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER);
+      if (n > 0) {
+        tchFingers++;
+        int32_t tx = touchDev->IIC_Read_Device_Value(
+              touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
+        int32_t ty = touchDev->IIC_Read_Device_Value(
+              touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
+        if (tx >= 0 && ty >= 0) {
+          tchX = (uint16_t)tx; tchY = (uint16_t)ty; tchHoldMs = millis();
+#if TOUCH_DEBUG
+          if (Serial.availableForWrite() > 40)
+            Serial.printf("[touch] n=%ld raw=%ld,%ld\n", (long)n, (long)tx, (long)ty);
+#endif
+        } else {
+          tchBadCoord++;
+#if TOUCH_DEBUG
+          if (Serial.availableForWrite() > 40)
+            Serial.printf("[touch] n=%ld BAD COORDS %ld,%ld\n", (long)n, (long)tx, (long)ty);
+#endif
+        }
+      }
+    }
+  }
+}
+
 inline void displayBegin() {
   Wire.begin(IIC_SDA, IIC_SCL);
-  if (!gfx->begin()) {
+  if (!gfx->begin(80000000)) {
     Serial.println("[disp] canvas begin FAILED - no PSRAM? check PSRAM=opi in the FQBN");
   }
   gfx->fillScreen(C_BG);
