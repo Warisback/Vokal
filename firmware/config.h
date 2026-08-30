@@ -33,6 +33,14 @@
 // ---------------------------------------------------------------------
 #define APP_TRACKER  1
 
+// Stream raw IMU samples over serial for tools/imuplot.py. Costs ~8 KB/s
+// of serial bandwidth; turn off once the tap thresholds are settled.
+#define IMU_STREAM   1
+
+// Log every raw touch coordinate so the mapping can be checked against
+// where you actually pressed.
+#define TOUCH_DEBUG  1
+
 // ---------------------------------------------------------------------
 // 2. WHICH UI ENGINE?
 //    0 = ui_simple.h  -- ~150 lines of LovyanGFX. Buttons, labels, lists.
