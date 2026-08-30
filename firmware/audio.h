@@ -12,6 +12,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "ESP_I2S.h"
+#include <Preferences.h>
+#include "SensorPCF85063.hpp"
 
 extern "C" {
   #include "es8311.h"
@@ -39,6 +41,15 @@ static uint8_t* audBuf     = nullptr;
 static volatile size_t audLen = 0;          // bytes of mono PCM captured
 static volatile bool   audRecording = false;
 static volatile bool   audPaused    = false;
+
+// Monotonic take id + wall-clock start time. Without these the host
+// cannot tell a new recording from one it already downloaded: two takes
+// of similar length look identical in /status.
+static Preferences   prefs;
+static SensorPCF85063 rtc;
+static bool     rtcOk = false;
+static uint32_t takeId = 0;
+static char     takeStarted[24] = "";      // ISO-ish, or "" if RTC unset
 
 static uint8_t  waveLvl[WAVE_SLOTS];        // 0-255 RMS, ring
 static volatile uint8_t waveHead = 0;
@@ -115,6 +126,13 @@ inline bool audioBegin() {
   }
   if (!audCodecInit()) return false;
 
+  // take id survives reboots so the host never sees an id go backwards
+  prefs.begin("vokal", false);
+  takeId = prefs.getUInt("take", 0);
+
+  rtcOk = rtc.begin(Wire, IIC_SDA, IIC_SCL);
+  Serial.printf("[aud] rtc %s\n", rtcOk ? "ok" : "not found");
+
   // Core 0: keep capture off the UI core so neither can starve the other.
   xTaskCreatePinnedToCore(audTask, "aud", 4096, nullptr, 5, nullptr, 0);
   Serial.printf("[aud] ready, %d KB buffer (%ds)\n",
@@ -122,7 +140,25 @@ inline bool audioBegin() {
   return true;
 }
 
-inline void audioStart() { audLen = 0; audPaused = false; audRecording = true; }
+inline void rtcStamp(char* out, size_t n) {
+  if (!rtcOk) { out[0] = 0; return; }
+  RTC_DateTime t = rtc.getDateTime();
+  // Treat an implausible year as "never set" rather than reporting noise.
+  if (t.getYear() < 2024) { out[0] = 0; return; }
+  snprintf(out, n, "%04u-%02u-%02uT%02u:%02u:%02u",
+           t.getYear(), t.getMonth(), t.getDay(),
+           t.getHour(), t.getMinute(), t.getSecond());
+}
+
+inline void audioStart() {
+  audLen = 0; audPaused = false;
+  takeId++;
+  prefs.putUInt("take", takeId);          // survives a reboot mid-demo
+  rtcStamp(takeStarted, sizeof(takeStarted));
+  Serial.printf("[aud] take %lu%s%s\n", (unsigned long)takeId,
+                takeStarted[0] ? " at " : "", takeStarted);
+  audRecording = true;
+}
 inline void audioStop()  { audRecording = false; }
 inline void audioPause(bool p) { audPaused = p; }
 inline uint32_t audioMs() { return (audLen / 2) * 1000UL / AUD_RATE; }

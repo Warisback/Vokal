@@ -77,8 +77,10 @@
 
 // Fallback: if every network fails, come up as an access point so you can
 // still demo something. Connect your laptop to this SSID.
-#define AP_FALLBACK_SSID  "hackathon-device"
-#define AP_FALLBACK_PASS  "12345678"      // >= 8 chars or the AP won't start
+// The puck is its own access point: the laptop joins THIS network and
+// pulls the recording from 192.168.4.1. No venue wifi involved.
+#define AP_SSID  "vokal-puck"
+#define AP_PASS  "vokal1234"      // >= 8 chars or the AP will not start
 
 // ---------------------------------------------------------------------
 // 5. HTTP
