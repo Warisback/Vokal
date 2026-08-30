@@ -14,14 +14,18 @@ static int  touchX = 0, touchY = 0;
 // always missed. Latch the click and hand it to the next paint pass.
 static bool touchClickPending = false;
 static int  clickX = 0, clickY = 0;
+static uint32_t touchSamples = 0, touchHits = 0;   // diagnostics
 
 inline void touchTick() {
   uint16_t x, y;
   bool now = tft.getTouch(&x, &y);
+  touchSamples++;
+  if (now) touchHits++;
   touchPressed  = (now && !touchDown);
-  bool rel      = (!now && touchDown);
   if (now) { touchX = x; touchY = y; }
-  if (rel) { touchClickPending = true; clickX = touchX; clickY = touchY; }
+  // Latch on PRESS, not release: firing on release costs up to a full
+  // repaint interval of perceived lag, and a press is what feels instant.
+  if (touchPressed) { touchClickPending = true; clickX = x; clickY = y; }
   touchReleased = false;          // only a paint pass may see a release
   touchDown = now;
 }

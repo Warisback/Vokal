@@ -54,6 +54,34 @@ firmware/
 attic/            earlier BLE tracker prototype, kept for reference
 ```
 
+## Hooking up speech-to-text
+
+Everything the upload needs is ready after `audioStop()`:
+
+| | |
+|---|---|
+| `audBuf` | PSRAM buffer, 16 kHz **mono 16-bit LE PCM** |
+| `audLen` | bytes captured (`audioMs()` for duration) |
+| `wavHeader(hdr, audLen)` | fills a 44-byte RIFF header to send in front of the PCM |
+| `marks[] / markCount` | `{ms, type}`, ms measured from recording start |
+| `net.h` | `netConnect()`, `httpGet()`, `httpPostJson()` — wifi with fallbacks, already written but not yet called |
+
+Put credentials in `firmware/secrets.h` (`STT_URL`, `STT_AUTH_HDR`,
+`STT_AUTH_VAL`) — never in tracked files.
+
+**Prefer an STT API that accepts a raw body** (Deepgram: `POST` with
+`Content-Type: audio/wav`) over one requiring `multipart/form-data`, which
+has to be hand-rolled on the ESP32. Word-level timestamps in the response
+are what let a mark be tied to an exact point in the transcript.
+
+Two constraints worth knowing before you start:
+
+- **`WiFi.mode(WIFI_OFF)` is called at boot** in `firmware.ino` — bring the
+  radio up when you need it. Wifi TX and the AMOLED backlight together draw
+  enough to brown out a weak supply.
+- Capture runs on core 0; do network work on core 1 (the main loop) or the
+  UI will stutter.
+
 ## Notes for anyone picking this up
 
 - **Full-screen framebuffer in PSRAM.** Everything draws off-screen and
@@ -66,3 +94,26 @@ attic/            earlier BLE tracker prototype, kept for reference
   registers — that showed up as the flip detector oscillating.
 - **Z is inverted on this board**: about −1.0 g resting face *up*.
 - Audio is 16 kHz mono into 2 MB of PSRAM ≈ 65 seconds.
+- **The IMU low-pass filter defaults to 2.66% of ODR.** At 125 Hz ODR that
+  is a 3.3 Hz corner, which erases a tap transient completely. It is now
+  `LPF_OFF` at 1000 Hz ODR.
+- **Never `Serial.printf` unguarded in a hot loop.** Streaming at 500 Hz
+  overran USB CDC and blocked the whole loop — the board went silent and
+  the UI froze. Writes are guarded with `availableForWrite()`.
+- **Touch is interrupt-driven.** Polling the CST816 blind competed with the
+  IMU on the shared I2C bus and mostly returned "no finger".
+- Tap detection keys off **high-passed az plus pulse width**, not `|a|` —
+  amplitude alone cannot tell a finger strike from picking the puck up,
+  because both reach similar peaks. Duration can.
+
+## Debugging
+
+`tools/imuplot.py` is a live 6-DoF scope for tuning the tap detector:
+
+```bash
+python3 tools/imuplot.py            # needs IMU_STREAM 1 in config.h
+```
+
+Raw `az` vs the high-passed signal the detector sees, gyro, and the
+movement gate, with markers for accepted taps and rejected pulses.
+Set `IMU_STREAM 0` when you are done — it costs serial bandwidth.
