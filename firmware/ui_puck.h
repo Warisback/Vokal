@@ -8,6 +8,7 @@
 #include "ui_kit.h"
 #include "audio.h"
 #include "imu.h"
+#include "httpsrv.h"
 
 enum PuckState { ST_IDLE, ST_REC, ST_REVIEW };
 static PuckState pstate = ST_IDLE;
@@ -147,10 +148,27 @@ inline void screenReview() {
            (unsigned long)(ms/60000), (unsigned long)((ms/1000)%60), markCount);
   tft.drawString(l, 12, 16);
   tft.setTextColor(C_MUTED, C_BG);
-  snprintf(l, sizeof(l), "%lu KB pcm - not yet transcribed", (unsigned long)(audLen/1024));
+  if (transcript.length()) {
+    snprintf(l, sizeof(l), "%lu KB - transcribed", (unsigned long)(audLen/1024));
+  } else if (srvClients()) {
+    snprintf(l, sizeof(l), "%lu KB - host connected, waiting", (unsigned long)(audLen/1024));
+  } else {
+    snprintf(l, sizeof(l), "%lu KB - join wifi %s", (unsigned long)(audLen/1024), AP_SSID);
+  }
   tft.drawString(l, 12, 42);
 
   int y = 80;
+  // Transcript takes priority over the raw mark list once it lands: it is
+  // what a judge actually wants to look at.
+  if (transcript.length()) {
+    tft.setTextColor(C_TEXT, C_BG);
+    int chars = SCR_W / (6 * UI_S);
+    for (int i = 0; i < 8 && (size_t)(i * chars) < transcript.length(); i++) {
+      tft.drawString(transcript.substring(i * chars, (i + 1) * chars), 12, y);
+      y += 10 * UI_S;
+    }
+    y += 8;
+  }
   for (int i = 0; i < markCount && y < SCR_H - 130; i++) {
     uint32_t m = marks[i].ms;
     snprintf(l, sizeof(l), "%02lu:%02lu  %s",

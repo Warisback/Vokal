@@ -11,6 +11,7 @@
 #include "display.h"
 #include "audio.h"
 #include "imu.h"
+#include "httpsrv.h"
 #include "ui_puck.h"
 
 static void printChipInfo() {
@@ -39,6 +40,7 @@ void setup() {
 
   if (!audioBegin()) uiSplash("AUDIO FAILED - check serial");
   imuBegin();
+  srvBegin();
 #if IMU_STREAM
   imuStreamThresholds();
 #endif
@@ -48,6 +50,7 @@ void setup() {
 }
 
 void loop() {
+  srvTick();       // cheap when idle; only /audio.wav costs real time
   uiTick();
 
   // Heartbeat: the S3's native USB re-enumerates on reset, so a boot-only
@@ -61,6 +64,8 @@ void loop() {
                   (int)imuOk, imuZ, (int)imuFaceDown, (int)imuOrientStable);
     Serial.printf("[hb] touch samples=%lu hits=%lu last=(%d,%d)\n",
                   (unsigned long)touchSamples, (unsigned long)touchHits, touchX, touchY);
+    Serial.printf("[hb] ap clients=%d transcript=%u chars\n",
+                  srvClients(), transcript.length());
   }
   delay(5);
 }
