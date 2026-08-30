@@ -115,17 +115,33 @@ struct TftShim {
   }
   void drawString(const String& s, int x, int y) { drawString(s.c_str(), x, y); }
 
+  // The CST816 asserts TP_INT on touch activity. Polling its registers
+  // blind competes with the IMU on the same I2C bus and mostly returns
+  // "no finger", so read only when the interrupt says there is something
+  // to read, and hold the contact briefly so a press is not missed
+  // between UI frames.
   bool getTouch(uint16_t* x, uint16_t* y) {
-    if (touchDev->IIC_Read_Device_Value(
-          touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER) == 0)
-      return false;
-    int32_t tx = touchDev->IIC_Read_Device_Value(
-          touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
-    int32_t ty = touchDev->IIC_Read_Device_Value(
-          touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
-    if (tx < 0 || ty < 0) return false;
-    *x = (uint16_t)tx; *y = (uint16_t)ty;
-    return true;
+    static uint32_t lastHitMs = 0;
+    static uint16_t lx = 0, ly = 0;
+    if (touchIrq) {
+      touchIrq = false;
+      int32_t n = touchDev->IIC_Read_Device_Value(
+            touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER);
+      if (n > 0) {
+        int32_t tx = touchDev->IIC_Read_Device_Value(
+              touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_X);
+        int32_t ty = touchDev->IIC_Read_Device_Value(
+              touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_COORDINATE_Y);
+        if (tx >= 0 && ty >= 0) {
+          lx = (uint16_t)tx; ly = (uint16_t)ty; lastHitMs = millis();
+#if TOUCH_DEBUG
+          if (Serial.availableForWrite() > 32) Serial.printf("[touch] raw %ld,%ld\n", (long)tx, (long)ty);
+#endif
+        }
+      }
+    }
+    if (lastHitMs && millis() - lastHitMs < 80) { *x = lx; *y = ly; return true; }
+    return false;
   }
   bool touch() { return true; }
 };

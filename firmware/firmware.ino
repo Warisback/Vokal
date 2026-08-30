@@ -32,6 +32,9 @@ void setup() {
 
   if (!audioBegin()) uiSplash("AUDIO FAILED - check serial");
   imuBegin();
+#if IMU_STREAM
+  imuStreamThresholds();
+#endif
 
   uiBegin();
   Serial.println("[main] ready");
@@ -43,12 +46,14 @@ void loop() {
   // Heartbeat: the S3's native USB re-enumerates on reset, so a boot-only
   // banner is easy to miss. This prints regardless of when you attach.
   static uint32_t hb = 0;
-  if (millis() - hb > 2000) {
+  if (millis() - hb > (IMU_STREAM ? 5000 : 2000)) {
     hb = millis();
     Serial.printf("[hb] state=%d rec=%d paused=%d pcm=%luKB peak=%u marks=%d | imu=%d z=%.2f down=%d orient=%d\n",
                   (int)pstate, (int)audRecording, (int)audPaused,
                   (unsigned long)(audLen/1024), (unsigned)audPeak, markCount,
                   (int)imuOk, imuZ, (int)imuFaceDown, (int)imuOrientStable);
+    Serial.printf("[hb] touch samples=%lu hits=%lu last=(%d,%d)\n",
+                  (unsigned long)touchSamples, (unsigned long)touchHits, touchX, touchY);
   }
   delay(5);
 }
