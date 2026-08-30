@@ -35,7 +35,7 @@
 
 // Stream raw IMU samples over serial for tools/imuplot.py. Costs ~8 KB/s
 // of serial bandwidth; turn off once the tap thresholds are settled.
-#define IMU_STREAM   1
+#define IMU_STREAM   0   // 1 = 500 Hz IMU stream for tools/imuplot.py
 
 // Log every raw touch coordinate so the mapping can be checked against
 // where you actually pressed.
