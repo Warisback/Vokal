@@ -11,6 +11,7 @@
 #include "display.h"
 #include "audio.h"
 #include "imu.h"
+#include "httpsrv.h"
 #include "ui_puck.h"
 
 static void printChipInfo() {
@@ -24,6 +25,13 @@ static void printChipInfo() {
 
 void setup() {
   Serial.begin(115200);
+  // CRITICAL: USB CDC writes BLOCK when the host is not draining the port.
+  // With no serial monitor attached the TX buffer fills and every printf
+  // stalls the loop for the full timeout -- the display updated every few
+  // seconds and touch felt dead. It only ever behaved well while a monitor
+  // was attached, which is exactly the case that hid the bug.
+  // Timeout 0 = drop debug output instead of blocking. Never remove this.
+  Serial.setTxTimeoutMs(0);
   delay(400);
   printChipInfo();
 
@@ -32,6 +40,7 @@ void setup() {
 
   if (!audioBegin()) uiSplash("AUDIO FAILED - check serial");
   imuBegin();
+  srvBegin();
 #if IMU_STREAM
   imuStreamThresholds();
 #endif
@@ -41,6 +50,7 @@ void setup() {
 }
 
 void loop() {
+  srvTick();       // cheap when idle; only /audio.wav costs real time
   uiTick();
 
   // Heartbeat: the S3's native USB re-enumerates on reset, so a boot-only
@@ -54,6 +64,8 @@ void loop() {
                   (int)imuOk, imuZ, (int)imuFaceDown, (int)imuOrientStable);
     Serial.printf("[hb] touch samples=%lu hits=%lu last=(%d,%d)\n",
                   (unsigned long)touchSamples, (unsigned long)touchHits, touchX, touchY);
+    Serial.printf("[hb] ap clients=%d transcript=%u chars\n",
+                  srvClients(), transcript.length());
   }
   delay(5);
 }
