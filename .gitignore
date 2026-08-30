@@ -1,4 +1,4 @@
-# secrets -- never commit wifi passwords or API keys
+# secrets -- never commit wifi passwords, hostnames or keys
 firmware/secrets.h
 
 # build artifacts
@@ -9,4 +9,77 @@ build/
 
 # macOS
 .DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# python (tools/imuplot.py, laptop/)
+__pycache__/
+laptop/__pycache__/
+laptop/**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+
+# laptop-side config -- PROTOCOL.md: .env is never committed
+.env
+.env.*
+laptop/.env
+!.env.example
+
+# Recorded microphone audio. Someone's voice, captured on this machine --
+# it is theirs, not the repo's. Regenerated every run; never committed.
+laptop/captures/
+
+# ---------------------------------------------------------------------
+#  DO NOT IGNORE laptop/demo_clips/
+#
+#  That directory holds the PRE-RENDERED clip beat -- clip1_source.wav,
+#  clip1_rendered.wav and clip1.txt. The clip beat plays a cached WAV: no
+#  STT, no TTS, no network at run time, so it cannot fail on stage. It is the
+#  demo's safety net, and a safety net that is not in the repo is not a
+#  safety net. It MUST be committed.
+#
+#  Note the tension with the rules above: laptop/captures/*.wav is ignored and
+#  laptop/demo_clips/*.wav is not. Do not "tidy" that into a blanket *.wav.
+# ---------------------------------------------------------------------
+!laptop/demo_clips/
+!laptop/demo_clips/**
+
+# arduino-cli output, if anyone points --build-path or --output-dir here
+firmware/build/
+*.hex
+*.uf2
+
+# arduino-cli itself, if someone unzips it into the repo instead of
+# %LOCALAPPDATA%\Programs\arduino-cli the way setup.ps1 does
+arduino-cli.exe
+arduino-cli_*.zip
+
+# tool logs
 tools/serial-debug.log
+tools/*.log
+
+# ---------------------------------------------------------------------
+#  Vendor libraries belong in the arduino-cli user directory
+#  (C:\Users\<you>\OneDrive\Documents\Arduino\libraries), never in here.
+#  These five names are listed as a tripwire: setup.ps1 once resolved a null
+#  destination and Copy-Item fell back to the current directory, dumping all
+#  five into the repo root. setup.ps1 now hard-guards against that (see
+#  Get-CliLine), but if you ever see one of these show up here again,
+#  something re-broke -- do not commit it, fix the script.
+# ---------------------------------------------------------------------
+/GFX_Library_for_Arduino/
+/Arduino_DriveBus/
+/SensorLib/
+/Adafruit_BusIO/
+/Adafruit_XCA9554/

@@ -1,0 +1,31 @@
+# Vokal laptop server -- local-only files.
+# Scoped to laptop/ so it does not collide with the repo-root .gitignore.
+
+# Local settings. Never commit it.
+.env
+
+# Every received utterance is written here for debugging and for building a
+# regression set. It is recordings of real people's voices: keep it local.
+captures/
+
+# Audio in general is people's voices. Do not commit a person's voice without
+# their explicit agreement -- see demo_clips/README.md.
+demo_clips/*.wav
+demo_clips/*.mp3
+demo_clips/*.m4a
+demo_clips/*.flac
+demo_clips/*.ogg
+
+# ...EXCEPT the two demo-clip artefacts, which are cleared for the repo and are
+# the demo's safety net. The clip beat plays clip1_rendered.wav straight from
+# disk with no model in the path, so if it is not committed the fallback that
+# "cannot fail" is missing on any fresh checkout. These negations must stay
+# BELOW the demo_clips/*.wav rule above -- last matching rule wins.
+!demo_clips/clip1_source.wav
+!demo_clips/clip1_rendered.wav
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

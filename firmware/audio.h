@@ -39,6 +39,12 @@ static uint8_t* audBuf     = nullptr;
 static volatile size_t audLen = 0;          // bytes of mono PCM captured
 static volatile bool   audRecording = false;
 static volatile bool   audPaused    = false;
+// True whenever the capture task is parked, false while it has a chunk in
+// flight. audRecording going false does NOT mean capture has finished: the
+// task only tests that flag at the top of its loop, so a task already
+// inside i2s.readBytes() commits its chunk and grows audLen for up to
+// ~64 ms afterwards. A caller that wants a settled audLen waits on this.
+static volatile bool   audIdle      = true;
 
 static uint8_t  waveLvl[WAVE_SLOTS];        // 0-255 RMS, ring
 static volatile uint8_t waveHead = 0;
@@ -73,7 +79,8 @@ static bool audCodecInit() {
 static void audTask(void*) {
   static int16_t raw[AUD_CHUNK];
   for (;;) {
-    if (!audRecording || audPaused) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+    if (!audRecording || audPaused) { audIdle = true; vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+    audIdle = false;
 
     size_t got = i2s.readBytes((char*)raw, sizeof(raw));
     if (!got) { vTaskDelay(pdMS_TO_TICKS(2)); continue; }
@@ -122,7 +129,41 @@ inline bool audioBegin() {
   return true;
 }
 
-inline void audioStart() { audLen = 0; audPaused = false; audRecording = true; }
+// Empty whatever the DMA ring is holding.
+//
+// WHY: the I2S RX channel is started once in audioBegin and never stopped,
+// but nothing drains it while !audRecording. So the ring is permanently
+// full of the room as it sounded BEFORE the button was pressed, and every
+// capture used to open with a fragment of the last conversation. Harmless
+// for a meeting recorder that runs for an hour; fatal for push-to-talk,
+// where it is a whole second of the wrong words in front of a 3 s sentence.
+//
+// Reads in 8 ms pieces rather than one big one: a chunk already sitting in
+// the ring returns instantly, so the first read that has to WAIT is the
+// one that caught up with real time, and stopping there costs 8 ms instead
+// of a whole 64 ms chunk of the user's first syllable.
+inline void audioDrain() {
+  static int16_t sink[256];               // 512 B = 128 stereo frames = 8 ms
+  uint32_t t0 = millis();
+  while (millis() - t0 < 60) {            // hard cap: a press must feel instant
+    uint32_t t1 = millis();
+    size_t got = i2s.readBytes((char*)sink, sizeof(sink));
+    if (!got || millis() - t1 >= 4) break;
+  }
+}
+
+inline void audioStart() {
+  // Drain BEFORE audRecording goes true, never after: while the flag is
+  // still false the capture task is parked in its idle branch and cannot
+  // be reading the same channel underneath us.
+  audioDrain();
+  // None of this is cleared by the task, and the UI reads all of it. Left
+  // alone, the meter opens showing the last utterance's bars.
+  memset(waveLvl, 0, sizeof(waveLvl));
+  waveHead = 0;
+  audPeak  = 0;
+  audLen = 0; audPaused = false; audRecording = true;
+}
 inline void audioStop()  { audRecording = false; }
 inline void audioPause(bool p) { audPaused = p; }
 inline uint32_t audioMs() { return (audLen / 2) * 1000UL / AUD_RATE; }
