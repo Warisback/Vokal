@@ -47,6 +47,13 @@ static volatile bool touchIrq = false;
 static void touchISR(void) { touchIrq = true; }
 
 // ---- colours ---------------------------------------------------------
+// Arduino_GFX.h already defines RGB565, but its version has no cast: the
+// expression comes out `int`, so every colour constant below would need
+// one at the point of use. Ours casts once, here. Same arithmetic, so the
+// redefinition is harmless -- but it is still a redefinition, and an
+// unguarded one warns under -Wall. Undef first and the warning goes away
+// without either macro changing what it computes.
+#undef  RGB565
 #define RGB565(r,g,b) ((uint16_t)((((r)&0xF8)<<8)|(((g)&0xFC)<<3)|((b)>>3)))
 static const uint16_t C_BG     = RGB565(  0,  0,  0);   // AMOLED: true black is free
 static const uint16_t C_PANEL  = RGB565( 26, 32, 46);

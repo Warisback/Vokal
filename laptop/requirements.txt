@@ -1,0 +1,62 @@
+# Vokal laptop server -- Python 3.12 on Windows.
+#
+# Versions below are the ones actually installed and measured on the demo
+# laptop. Everything ships a cp312 win_amd64 wheel; nothing needs a C compiler
+# and nothing here is POSIX-only (uvicorn is installed WITHOUT the [standard]
+# extra, which is what would drag in uvloop and httptools).
+#
+#   pip install -r requirements.txt
+#
+# NOTE: install into a venv OUTSIDE this repository. The repo lives under a
+# long OneDrive path -- site-packages hits the Windows MAX_PATH limit, and
+# OneDrive corrupts the model files it tries to sync. The demo venv is
+# C:\vokal-venv.
+#
+# There is no API key anywhere in this stack. Speech to text and text to speech
+# both run locally, so a Vokal laptop works on a dead network and no audio ever
+# leaves the machine.
+#
+# ---------------------------------------------------------------------------
+# MINIMUM FOR --fake MODE
+# ---------------------------------------------------------------------------
+# The firmware has to be integrable before the AI stack exists. These two
+# packages alone are enough to run `python server.py --fake`, which serves every
+# endpoint in PROTOCOL.md with canned captions and a canned 1 s delay:
+#
+#   pip install fastapi uvicorn
+#
+# config.py and pipeline.py import everything else lazily so that stays true.
+# ---------------------------------------------------------------------------
+
+fastapi==0.141.1
+uvicorn==0.52.4
+
+# .env loading. config.py has a hand-rolled fallback parser if this is absent,
+# so --fake mode does not depend on it.
+python-dotenv==1.2.3
+
+# Speech to text. Pulls ctranslate2, tokenizers, huggingface-hub and av (PyAV),
+# all wheels.
+#
+# FIRST RUN DOWNLOADS the model weights from HuggingFace. Do that the day
+# before, not on venue wifi. small.en int8 is already cached on this laptop and
+# measured at RTF 0.103 (6.2 s of CPU for a 60 s clip).
+faster-whisper==1.2.1
+
+# Text to speech, entirely local. Ships its own onnxruntime; the voices are
+# .onnx files that live OUTSIDE the repo (see PIPER_VOICE_DIR in .env.example)
+# because OneDrive mangles them. Measured on this laptop: en_GB-cori-high takes
+# ~2.3 s to load once at startup, then 0.83 s to first audio at RTF 0.197.
+piper-tts==1.7.0
+
+# NOT pinned exactly, deliberately. numpy's C ABI is the one place this stack
+# can break: ctranslate2's wheel is compiled against a specific numpy
+# generation, and forcing the wrong side of a boundary produces an
+# "_ARRAY_API not found" import error that looks like a faster-whisper bug and
+# costs an hour. Let pip resolve it against whatever ctranslate2 asks for.
+numpy>=1.24
+
+# Playback. Ships PortAudio inside the wheel, so there is no system audio
+# library to install, and it takes raw PCM straight from Piper with no decode
+# and no subprocess (ffplay would cost ~200 ms of spawn we do not have).
+sounddevice==0.5.6
