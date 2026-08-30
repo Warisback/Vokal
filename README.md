@@ -1,6 +1,6 @@
-# Meeting puck
+# Vokal
 
-A table-top device that captures a conversation, lets a human **mark what
+A table-top meeting puck that captures a conversation, lets a human **mark what
 mattered while it is happening**, and turns the result into structured notes.
 
 Hardware: **Waveshare ESP32-S3-Touch-AMOLED-1.8 (V2)** — 368×448 AMOLED,
