@@ -97,7 +97,7 @@ inline void screenRec() {
   else                     { tft.setTextColor(C_OK, C_BG);    tft.drawString("hearing you", SCR_W/2, 200); }
 
   // 2x2 mark grid
-  int gx = 10, gy = 220, gw = (SCR_W - 30) / 2, gh = 66;
+  int gx = 10, gy = 214, gw = (SCR_W - 30) / 2, gh = 62;
   const char* labels[4] = { "* important", "OK decision", "-> action", "? question" };
   for (int i = 0; i < 4; i++) {
     Button b = { (int16_t)(gx + (i % 2) * (gw + 10)), (int16_t)(gy + (i / 2) * (gh + 10)),
@@ -113,13 +113,26 @@ inline void screenRec() {
     snprintf(l, sizeof(l), "last: %s @ %02lu:%02lu",
              MARK_NAMES[marks[markCount-1].type],
              (unsigned long)(m/60000), (unsigned long)((m/1000)%60));
-    tft.drawString(l, SCR_W/2, gy + 2*gh + 26);
+    tft.drawString(l, SCR_W/2, gy + 2*gh + 22);
   } else {
-    tft.drawString("double-tap the table to mark", SCR_W/2, gy + 2*gh + 26);
+    tft.drawString("double-tap the table to mark", SCR_W/2, gy + 2*gh + 22);
   }
 
-  Button stop = { 10, (int16_t)(SCR_H - 62), (int16_t)(SCR_W - 20), 52, "STOP", C_PANEL };
-  if (btnUpdate(stop)) { audioStop(); chirpStop(); pstate = ST_REVIEW; }
+  // Kept clear of the bottom edge: the panel reads unreliably within a
+  // few mm of the border, and this is the one control that must work.
+  Button stop = { 12, (int16_t)(SCR_H - 96), (int16_t)(SCR_W - 24), 68, "STOP", C_PANEL };
+  tft.fillRect(stop.x, stop.y, stop.w, stop.h, C_BG);
+  bool stopActive = touchDown && btnHit(stop, touchX, touchY);
+  tft.fillRoundRect(stop.x, stop.y, stop.w, stop.h, 10, stopActive ? C_ERR : C_PANEL);
+  tft.drawRoundRect(stop.x, stop.y, stop.w, stop.h, 10, C_ERR);
+  tft.setTextColor(C_TEXT, stopActive ? C_ERR : C_PANEL);
+  tft.setTextDatum(textdatum_t::middle_center);
+  tft.setTextSize(UI_S * 2);
+  tft.drawString("STOP", stop.x + stop.w / 2, stop.y + stop.h / 2);
+  tft.setTextSize(UI_S);
+  if (touchReleased && btnHit(stop, touchX, touchY)) {
+    audioStop(); chirpStop(); pstate = ST_REVIEW;
+  }
 }
 
 // --- REVIEW -----------------------------------------------------------
@@ -147,7 +160,7 @@ inline void screenReview() {
     y += 22 * UI_S / 2 + 8;
   }
 
-  Button again = { 10, (int16_t)(SCR_H - 62), (int16_t)(SCR_W - 20), 52, "NEW RECORDING", C_PANEL };
+  Button again = { 12, (int16_t)(SCR_H - 96), (int16_t)(SCR_W - 24), 68, "NEW RECORDING", C_PANEL };
   if (btnUpdate(again)) pstate = ST_IDLE;
 }
 

@@ -121,10 +121,14 @@ struct TftShim {
   // to read, and hold the contact briefly so a press is not missed
   // between UI frames.
   bool getTouch(uint16_t* x, uint16_t* y) {
-    static uint32_t lastHitMs = 0;
+    static uint32_t lastHitMs = 0, lastPollMs = 0;
     static uint16_t lx = 0, ly = 0;
-    if (touchIrq) {
+    // Read on interrupt, but also poll as a backstop: if the controller's
+    // periodic interrupt fails to re-arm, presses vanish entirely.
+    bool doRead = touchIrq || (millis() - lastPollMs > 25);
+    if (doRead) {
       touchIrq = false;
+      lastPollMs = millis();
       int32_t n = touchDev->IIC_Read_Device_Value(
             touchDev->Arduino_IIC_Touch::Value_Information::TOUCH_FINGER_NUMBER);
       if (n > 0) {

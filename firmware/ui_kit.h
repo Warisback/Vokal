@@ -41,8 +41,12 @@ inline void touchEndFrame() { touchClickPending = false; touchReleased = false; 
 // --- buttons ----------------------------------------------------------
 struct Button { int16_t x, y, w, h; const char* label; uint16_t fill; };
 
+// Generous hit slop. Reported coordinates drift by several pixels near
+// the panel edges, and a demo device gets jabbed at, not aimed at.
+#define HIT_SLOP 14
 inline bool btnHit(const Button& b, int px, int py) {
-  return px >= b.x && px < b.x + b.w && py >= b.y && py < b.y + b.h;
+  return px >= b.x - HIT_SLOP && px < b.x + b.w + HIT_SLOP &&
+         py >= b.y - HIT_SLOP && py < b.y + b.h + HIT_SLOP;
 }
 inline void btnDraw(const Button& b, bool active = false) {
   uint16_t fill = active ? C_ACCENT : b.fill;
