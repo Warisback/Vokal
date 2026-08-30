@@ -24,6 +24,13 @@ static void printChipInfo() {
 
 void setup() {
   Serial.begin(115200);
+  // CRITICAL: USB CDC writes BLOCK when the host is not draining the port.
+  // With no serial monitor attached the TX buffer fills and every printf
+  // stalls the loop for the full timeout -- the display updated every few
+  // seconds and touch felt dead. It only ever behaved well while a monitor
+  // was attached, which is exactly the case that hid the bug.
+  // Timeout 0 = drop debug output instead of blocking. Never remove this.
+  Serial.setTxTimeoutMs(0);
   delay(400);
   printChipInfo();
 
