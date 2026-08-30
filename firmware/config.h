@@ -35,11 +35,11 @@
 
 // Stream raw IMU samples over serial for tools/imuplot.py. Costs ~8 KB/s
 // of serial bandwidth; turn off once the tap thresholds are settled.
-#define IMU_STREAM   1
+#define IMU_STREAM   0   // 1 = 500 Hz stream for tools/imuplot.py; costs serial bandwidth
 
 // Log every raw touch coordinate so the mapping can be checked against
 // where you actually pressed.
-#define TOUCH_DEBUG  1
+#define TOUCH_DEBUG  0   // log every raw touch coordinate
 
 // ---------------------------------------------------------------------
 // 2. WHICH UI ENGINE?
@@ -77,8 +77,10 @@
 
 // Fallback: if every network fails, come up as an access point so you can
 // still demo something. Connect your laptop to this SSID.
-#define AP_FALLBACK_SSID  "hackathon-device"
-#define AP_FALLBACK_PASS  "12345678"      // >= 8 chars or the AP won't start
+// The puck is its own access point: the laptop joins THIS network and
+// pulls the recording from 192.168.4.1. No venue wifi involved.
+#define AP_SSID  "vokal-puck"
+#define AP_PASS  "vokal1234"      // >= 8 chars or the AP will not start
 
 // ---------------------------------------------------------------------
 // 5. HTTP

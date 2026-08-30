@@ -97,9 +97,16 @@ Two constraints worth knowing before you start:
 - **The IMU low-pass filter defaults to 2.66% of ODR.** At 125 Hz ODR that
   is a 3.3 Hz corner, which erases a tap transient completely. It is now
   `LPF_OFF` at 1000 Hz ODR.
-- **Never `Serial.printf` unguarded in a hot loop.** Streaming at 500 Hz
-  overran USB CDC and blocked the whole loop — the board went silent and
-  the UI froze. Writes are guarded with `availableForWrite()`.
+- **`Serial.setTxTimeoutMs(0)` in `setup()` is load-bearing. Do not remove
+  it.** USB CDC writes *block* when the host is not draining the port. With
+  no serial monitor attached the TX buffer fills and every `printf` stalls
+  the loop for the full timeout: the display updated every few seconds and
+  touch felt dead. The device only behaved correctly *while a monitor was
+  attached* — which is exactly the condition that hid the bug during
+  development, and exactly the opposite of demo conditions. Timeout 0 drops
+  debug output instead of blocking. Hot-path writes are additionally
+  guarded with `availableForWrite()`.
+- Leave `IMU_STREAM` and `TOUCH_DEBUG` at 0 unless actively debugging.
 - **Touch is interrupt-driven.** Polling the CST816 blind competed with the
   IMU on the shared I2C bus and mostly returned "no finger".
 - Tap detection keys off **high-passed az plus pulse width**, not `|a|` —
