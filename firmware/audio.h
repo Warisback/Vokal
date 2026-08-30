@@ -130,7 +130,7 @@ inline int audioPct() { return (int)(audLen * 100 / AUD_BUF_BYTES); }
 
 // --- speaker: eyes-free confirmation ---------------------------------
 // You are looking at people in a meeting, not at the screen.
-inline void audioChirp(int freq, int ms, uint8_t vol = 40) {
+inline void audioChirp(int freq, int ms, uint8_t vol = 17) {   // ~-7.4 dB below the original 40
   int n = AUD_RATE * ms / 1000;
   int16_t* t = (int16_t*)malloc(n * 2 * sizeof(int16_t));
   if (!t) return;
