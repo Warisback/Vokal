@@ -1,5 +1,7 @@
 # Vokal
 
+[![Tests](https://github.com/Warisback/Vokal/actions/workflows/test.yml/badge.svg)](https://github.com/Warisback/Vokal/actions/workflows/test.yml)
+
 Vokal is a web app, being built for phones, for people whose words are intact but whose voice cannot carry them: after a laryngectomy, with a paralysed vocal cord, or as motor neurone disease (MND) weakens the voice. You hold a button and speak. Whisper writes down what you said, in the browser, on the device itself. You check the words, and Vokal says them out loud only when you tap Speak.
 
 <p>
@@ -16,7 +18,7 @@ Screenshots from the browser test at phone size (393 x 852) in desktop Edge. The
 
 Status: Vokal runs stock Whisper and has only been checked in a desktop browser with synthetic, typical speech. It has not been tried on a real phone, and it has not been tested on atypical speech.
 
-Try it: the app is not deployed yet. Once GitHub Pages is switched on for this repository, it will be at <https://warisback.github.io/Vokal/>. Until then it runs locally with one command (see [Run it](#run-it)). The first use downloads about 70 MB once, when you tap Download: the 43.5 MB default model plus the 26.9 MB speech runtime. After that it works offline (checked in desktop Edge, not yet on a phone).
+Try it: <https://warisback.github.io/Vokal/> (served over HTTPS, so the microphone works on a phone). It also runs locally (see [Run it](#run-it)). The first use downloads about 70 MB once, when you tap Download: the 43.5 MB default model plus the 26.9 MB speech runtime. After that it works offline (checked in desktop Edge, not yet on a phone).
 
 ## Why
 
@@ -123,7 +125,7 @@ node server/server.mjs
 Then open <http://127.0.0.1:3210/>. Add `--base /Vokal/` to serve it under the same sub-path as GitHub Pages.
 
 - Suggestions: copy `server/.env.example` to `server/.env`, choose a provider and add its key, run `npm start --prefix server`, then set the server address in the app's Settings to `./` (the server that is serving the page).
-- On a phone: the GitHub Pages build is the intended route once it is deployed. Nothing has been tried on a phone yet ([checklist](docs/PHONE_CHECKLIST.md)). An HTTPS tunnel to your own server should also work but has not been tried. It publishes the suggestion endpoint to the internet; read [the tunnel section](server/README.md#using-it-from-a-phone-through-a-tunnel) and set `VOKAL_ACCESS_TOKEN` first.
+- On a phone: open the GitHub Pages build above. Nothing has been tried on a real phone yet ([checklist](docs/PHONE_CHECKLIST.md)). An HTTPS tunnel to your own server should also work but has not been tried. It publishes the suggestion endpoint to the internet; read [the tunnel section](server/README.md#using-it-from-a-phone-through-a-tunnel) and set `VOKAL_ACCESS_TOKEN` first.
 - Your own model: in Settings, Custom model, enter a public Hugging Face repo as `owner/name@revision`, or `models/<name>` for a folder served by `node server/server.mjs --models <folder>`. Not tried end to end yet; see [`ml/README.md`](ml/README.md#where-a-trained-model-plugs-in).
 
 ### The Python package
@@ -153,7 +155,7 @@ Apart from the one-time `npm run vendor`, none of these needs the network or a s
 
 The browser test, `app/tests/e2e.mjs`, drives headless Edge with a fake microphone and synthetic speech. It needs `npm install --prefix app` once, then `npm run e2e --prefix app`. Each run uses a fresh browser profile, so it downloads the model and runtime (about 70 MB) every time; `--base-en` adds 79.6 MB and `--webgpu` 122.3 MB. It is written for Windows: it uses Edge (`VOKAL_E2E_CHANNEL=chrome` for Chrome) and makes its longer sentence with System.Speech (elsewhere, pass `--long <wav>`).
 
-GitHub Actions ([`test.yml`](.github/workflows/test.yml)) runs a hygiene check (no recordings, `.env` files, secrets or model weights in the repo) and all three suites on every push to `main` and every pull request. [`pages.yml`](.github/workflows/pages.yml) deploys `app/` to GitHub Pages once Pages is switched on for the repository; the steps are in the workflow file.
+GitHub Actions ([`test.yml`](.github/workflows/test.yml)) runs a hygiene check (no recordings, `.env` files, secrets or model weights in the repo) and all three suites on every push to `main` and every pull request. [`pages.yml`](.github/workflows/pages.yml) deploys `app/` to GitHub Pages whenever a push changes it.
 
 ## Repository layout
 
