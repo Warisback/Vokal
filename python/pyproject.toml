@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vokal"
+dynamic = ["version"]
+description = "Speech to text with a hallucination guard, and local text to speech, for people whose voice cannot carry their words."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+# No required dependencies: the guard and the command line help run on the
+# standard library alone. Models and audio come in through the extras.
+dependencies = []
+
+[project.optional-dependencies]
+# av is pinned because faster-whisper 1.2.1 asks only for av>=11, and
+# decode_audio fails with av 19.0.1. numpy is left to pip: ctranslate2 is built
+# against one numpy generation, and forcing the other one breaks the import.
+stt = ["faster-whisper==1.2.1", "av==18.1.0", "numpy>=1.24"]
+tts = ["piper-tts==1.7.0"]
+audio = ["sounddevice==0.5.6"]
+all = ["vokal[stt,tts,audio]"]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+vokal = "vokal.cli:main"
+
+[tool.setuptools]
+packages = ["vokal"]
+
+[tool.setuptools.dynamic]
+version = { attr = "vokal.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

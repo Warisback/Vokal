@@ -1,0 +1,15 @@
+{
+  "name": "vokal-app",
+  "private": true,
+  "description": "Vokal phone web app. No build step. The unit tests use Node's own test runner and need no install; the browser test (npm run e2e) needs playwright-core.",
+  "type": "module",
+  "engines": { "node": ">=22.9" },
+  "scripts": {
+    "vendor": "node ../tools/fetch-vendor.mjs",
+    "test": "node --test \"tests/*.test.js\"",
+    "e2e": "node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

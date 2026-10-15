@@ -1,0 +1,15 @@
+{
+  "name": "vokal-server",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Optional local server for Vokal: serves the app for development and offers text suggestions.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22.9"
+  }
+}

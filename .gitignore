@@ -1,12 +1,54 @@
-# secrets -- never commit wifi passwords or API keys
-firmware/secrets.h
+# Secrets: never commit keys, tokens or Wi-Fi passwords
+.env
+.env.*
+!.env.example
+secrets.h
 
-# build artifacts
+# Recordings are people's voices. They stay on the machine that made them.
+# The only audio in the repo is synthetic test speech in app/tests/fixtures/.
+captures/
+recordings/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.oga
+*.opus
+*.webm
+*.aac
+!app/tests/fixtures/*.wav
+
+# Model weights and datasets live outside the repo (and outside OneDrive).
+# TORGO audio and transcripts stay out too (see ml/README.md).
+app/models/
+*.onnx
+*.safetensors
+*.pt
+*.ckpt
+ml/data/
+*.tar.bz2
+
+# The pinned transformers.js build is fetched, not committed (tools/fetch-vendor.mjs)
+app/vendor/transformers.min.js
+
+# Node
+node_modules/
+test-results/
+playwright-report/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
 build/
-*.bin
-*.elf
-*.map
+dist/
+.venv/
+venv/
 
-# macOS
+# OS and editor files
 .DS_Store
-tools/serial-debug.log
+Thumbs.db
+desktop.ini
+*.swp

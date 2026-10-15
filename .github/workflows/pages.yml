@@ -1,0 +1,63 @@
+name: Deploy the app to GitHub Pages
+
+# Runs only when started by hand, or when the repository variable
+# PAGES_ENABLED is 'true'. Until then each run shows as skipped, not failed.
+# To switch it on: Settings, Pages, Source "GitHub Actions", then add the
+# variable under Settings, Secrets and variables, Actions, Variables.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# The build only reads. Only the deploy job can write to Pages.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || vars.PAGES_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # The library is not committed: fetch the pinned build and check its SHA-256.
+      - name: Fetch the pinned transformers.js
+        run: npm run vendor --prefix app
+      # The site is app/ as it is, with no build step. The tests and the npm
+      # files are left out because they are not part of the installed app.
+      - name: Copy the app
+        run: |
+          mkdir _site
+          cp -R app/. _site/
+          rm -rf _site/tests _site/package.json _site/package-lock.json _site/node_modules _site/models
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.PAGES_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

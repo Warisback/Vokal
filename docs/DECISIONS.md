@@ -1,452 +1,156 @@
 # Decisions
 
-What this build locked in, why, and what was rejected. The rejections are the
-useful part — they are the hours you do not have to spend again.
-
-Ordered roughly by how much they constrain everything downstream.
-
----
-
-## 1. arduino-cli, not ESP-IDF
-
-**Decision.** Vokal is built with `arduino-cli` against `esp32:esp32` 3.3.11, as
-a set of `.h` files and one `.ino`.
+What Vokal decided, why, and what was rejected. Some of these were learned on real recordings in v1 (the ESP32 puck and laptop, August 2026). The rest come from the move to the phone in v2 (October 2026).
 
-**Why.** A complete, working firmware for this exact board already exists in
-`firmware/` and it is Arduino. It represents days of hardware debugging that is
-recorded in the comments: the PSRAM framebuffer, the interrupt-driven touch read,
-the IMU low-pass corner, the touch click latch, tap detection by pulse width.
-None of that transfers to a different framework for free; all of it would have to
-be re-found.
-
-**Rejected.** ESP-IDF v5.5 with the Waveshare BSP component and LVGL. It is the
-better long-term base and it is the wrong call for a build with a fixed deadline:
-it throws away working code to buy an abstraction the demo does not need. There
-is no `idf.py`, no `sdkconfig`, no managed components and no `lv_conf.h` in this
-repo, and adding them means starting bring-up from zero.
-
-**Cost.** Arduino-layer quirks stay ours to work around, and the five vendor
-libraries have to be copied from Waveshare's repo by hand in `setup.*` because
-the Library Manager versions do not drive this panel, this touch controller or
-this IMU.
-
----
-
-## 2. A new UI head, not a rewrite
-
-**Decision.** Vokal is `firmware/ui_vokal.h`, selected by `APP_VOKAL` in
-`config.h`. `ui_puck.h` is untouched and still builds with `APP_VOKAL 0`.
-`firmware.ino` changes by one `#if` around one include.
-
-**Why.** The two apps need the same display, touch, audio, IMU and network
-layers, and differ only in what is on screen and what a press means. Both heads
-expose the same three entry points — `uiSplash(const char*)`, `uiBegin()`,
-`uiTick()` — so `setup()` and `loop()` do not know which one is compiled in.
-Keeping the puck alive also keeps a known-good build available: if Vokal will not
-come up on the board, flipping one flag proves the hardware is fine and isolates
-the fault to the new code.
-
-**Rejected.** Editing `ui_puck.h` in place, or deleting it. It is the
-co-founder's working app, it is the reference implementation of the screen
-contract, and a demo that breaks a teammate's work to save a header file is a bad
-trade twice over.
-
----
-
-## 3. Speech-to-text and text-to-speech on the laptop, not on-device
-
-**Decision.** The board captures and triggers. All recognition and synthesis
-happens on a laptop on the same network.
-
-**Why.** The whole product is press-to-sound in a couple of seconds. An ESP32-S3
-can do keyword spotting; it cannot do open-vocabulary recognition plus natural
-synthesis, and it certainly cannot do both inside the budget. Putting the work on
-the laptop makes the latency budget achievable — measured at ~2 s end to end —
-and leaves the board doing the one job only hardware can do: being a button you
-can find without looking.
-
-**Rejected.** On-device inference, and posting straight to a commercial STT API
-from the board. The second is tempting — it removes the laptop — but it puts an
-API key in flash, forces TLS on the ESP32, and gives no place to hold the clip
-beat or the `/replay` cache.
-
-**Honest framing for judges.** The laptop is a stand-in for a phone over BLE or
-an on-device model. It is a deployment decision, not an architectural one.
-
----
-
-## 4. Piper, locally, instead of ElevenLabs
-
-**Decision.** Text-to-speech is **Piper** (`piper-tts` 1.7.0), voice
-`en_GB-cori-high`, running on the laptop. ElevenLabs is removed from the project
-entirely, and with it voice cloning, `enroll_voice.py`'s reason to exist, the
-API key, the account and the network dependency.
-
-**Why — four separate wins, in order of how much they matter on the day:**
-
-1. **It is faster.** Piper `en_GB-cori-high` reaches first audio in **0.83 s**
-   (RTF 0.197), measured on this laptop. A hosted flash model's *best case* was
-   budgeted at ~500 ms of first-byte latency and that was before the round trip,
-   the TLS handshake and whatever the venue wifi does to it. The `*-medium`
-   voices reach first audio in **0.13 s** (RTF 0.038) if we ever need the
-   headroom.
-2. **It cannot fail in ways we do not control.** No rate limit, no expired key,
-   no 429, no captive portal, no outage during someone else's demo slot. The
-   single largest category of demo-day failure is deleted, not mitigated.
-3. **It is free**, so rehearsing costs nothing and nobody rations runs.
-4. **The ethics problem disappears rather than being managed.** See decision 5.
-
-**Rejected.** Keeping ElevenLabs "just for the live beat". A second TTS path
-doubles the failure modes, keeps the key, keeps the account, and reintroduces
-every argument we had just closed, in exchange for a voice difference the room
-would not reliably notice through a hall PA.
+Numbers here are measured, with what, where and on what hardware. "The laptop" means an Intel Core i5-12450H (12 logical cores, 40 GB RAM) running Windows 11, with integrated Intel UHD graphics and an RTX 3050 laptop GPU (4 GB). In the browser, WebGPU ran on the Intel UHD graphics; the browser did not use the RTX 3050.
 
-**Cost.** Piper is audibly synthetic — good, natural-sounding, and not
-indistinguishable from a person. `en_GB-cori-high` was picked by ear out of four
-installed voices for exactly this reason. Model load is ~2.3 s, so the voice is
-loaded **once at server startup** and held; loading per request would eat the
-whole budget.
+## 1. Whisper runs with no prompt, no voice activity detection and no conditioning
 
----
+Decision. Whisper is never given an `initial_prompt`. In Python, faster-whisper runs with `vad_filter=False`, `condition_on_previous_text=False` and greedy decoding (`beam_size=1`). The web app uses greedy decoding too (transformers.js 4.3.0 has no working beam search: with `num_beams` above 1 it still keeps one token per step) and sends at most one 30 s window, so the two sides behave the same way.
 
-## 5. No voice cloning at all
+Why.
+- An earlier setup note recommended `initial_prompt="A person speaking softly in a quiet voice."`, to bias Whisper towards quiet speech. On a real clip in v1, Whisper wrote the prompt itself into the transcript, so the device would have spoken it as if the person had said it. About 30 s of real speech went missing in the same run. Removing the prompt fixed both.
+- Voice activity detection trims quiet speech, and quiet speech is who Vokal is for. The person already chooses where a recording starts and stops by pressing the button.
+- Conditioning on previous text lets one invented segment cascade into the next.
+- Greedy decoding: v1 judged that beam search buys little on short phrases and costs time. That was not measured. It is a setting in Python if step 5 wants to test it.
 
-**Decision.** Nothing in this project clones anybody's voice. There is no
-enrolment, no voice id, no consent checkbox, no stock-versus-clone split.
+Rejected. A better-worded prompt. Any prompt can come back as output; the failure is structural, not a matter of wording. This also rules out the obvious shortcut for the phrase bank (decision 9).
 
-**Why.** The previous design was defensible — presenter's own clone for the live
-beat, a stock voice for the clip, a rule in code that the clip path could not
-reach the clone. It was also a structure whose correctness had to be *argued*,
-and it put a "did you have consent" question in front of a room, about a product
-for disabled people, that we then had to answer well.
+## 2. The guard is mandatory, and it only removes
 
-Removing cloning removes the question. **We clone nobody, so there is nothing to
-consent to.** Both models are local, so **no recording of anybody's speech ever
-leaves the laptop** — there is no vendor holding a disabled person's voice
-sample. That is a stronger position than the one it replaces, not a weaker one,
-and it takes one sentence to say instead of three.
-
-**Rejected.** Cloning the presenter only, with consent. Genuinely fine on the
-merits, and still not worth it: it drags the whole ElevenLabs dependency back in
-(decision 4) to buy a nicety, and it re-opens the consent conversation for the
-sake of a beat that works without it.
-
-**Roadmap, explicitly not shipped.** **Voice banking** — people diagnosed with
-MND recording their own voice while they still have it, and a device that later
-speaks in that voice — is the obvious right answer for a real user, and it is the
-answer to give when a judge asks. It is their voice, their device, their choice,
-and it is not in this build. Say "roadmap". Do not imply it runs today.
+Decision. Every transcript passes through a guard before it is shown or spoken. It skips the model for a recording that is too short (under 0.3 s), silent (every sample zero) or too quiet (loudest 30 ms frame under -60 dBFS). It drops the whole result when Whisper's no-speech score is above 0.6. It removes sound tags such as `[Music]` or `(laughs)`, subtitle credit lines (`subtitles by`, `amara.org`, `www.`), and a short list of stock filler phrases ("Thank you.", "Thanks for watching", "Bye" and others) when they come at the very end. Each removal is reported with its reason. The JavaScript and Python guards pass the same 100 cases in `shared/guard_cases.json`, and `python/tests/test_guard_parity.py` runs both on 30,000 seeded random strings and checks the results are identical (characters added to Unicode after the version in Python's own database, 15.0 in Python 3.12, are outside that check).
 
-**Kept.** The clip beat's on-screen credit line (`VOKAL_CLIP_CREDIT`). Not
-cloning someone does not entitle you to use their recording uncredited.
+Why. Whisper invents text on silence and noise. In v1 it added "Thank you." to the trailing silence of a real clip; on the laptop in v2, every model tried turned 3 s of digital silence into "you". Most products can live with that. Vokal speaks for someone who may not be able to say "I didn't say that", so an invented sentence is the worst failure it has, worse than a slow answer and much worse than an empty one.
 
----
+What changed from v1, and what it costs.
+- v1 had two guards with different lists, and two of its checks could never fire: the laptop pipeline removed the dot before looking for `amara.org` and `www.`. v2 has one list and checks credit lines on the raw text.
+- v1 dropped a whole utterance that contained `www.`. v2 removes only that sentence. Cost: a web address someone really says is still removed.
+- v1 removed filler phrases wherever they appeared. v2 removes them only at the end, where Whisper invents them. Cost: a real "Thank you" at the end is removed too. The app shows "Removed at the end: Thank you." with an Add back button. When filler was the whole result and the no-speech score was low, it asks whether the person said it.
+- Tags are removed wherever they appear, because text to speech would read them aloud. Cost: a real aside that Whisper writes in round brackets is removed; "Use it anyway" restores it.
+- The pre-check uses the loudest 30 ms frame, not the level of the whole clip. A 0.5 s word at -45 dBFS inside a 30 s hold averages about -62.8 dBFS and would have been thrown away; its loudest frame reads -45.
 
-## 6. The clip beat is pre-rendered
+Rejected.
+- Filling an empty result with something plausible, such as "Sorry, could you repeat that?". That is inventing speech for a person who cannot object. Vokal says "Didn't catch that" to the person and speaks nothing.
+- OpenAI's combined rule (no-speech score above 0.6 and average log probability below -1.0). It would have kept the "you" invented on silence, whose average log probability was about -0.5.
+- A voice activity floor. Any level high enough to reject room noise would also reject quiet speech. Room noise goes to the model, and its no-speech score decides.
 
-**Decision.** `POST /demo/trigger` plays `laptop/demo_clips/clip1_rendered.wav`.
-No STT and no TTS run at demo time.
+Open risk. The 0.6 threshold and the filler list rest on stock Whisper and synthetic audio. Fine-tuning may shift the score, and dysarthric speech may score high even when someone is speaking. ML step 1 logs the score for every TORGO clip before the guard is trusted on real users.
 
-**Why.** Beat 1 is the beat that proves the idea, and it is the one thing in the
-demo that has no reason to be live. Everything it could gain by running the
-pipeline on stage, it already gained when we ran the pipeline offline; everything
-it can lose — a slow model, a busy CPU, a mis-transcription in front of judges —
-it loses for free. Rendered once, it is a file open and a playback start: **~50
-ms**, and no code path that can be slow.
-
-**Also — the transcript is hand-corrected.** Whisper misheard **"help" as
-"hell"** on this clip and added a sentence nobody said. `clip1.txt` is the
-corrected text and it is what was synthesised. On the beat that must not fail we
-do not rely on the hallucination guard; a person checked the words against the
-audio.
+## 3. The person reviews before anything is spoken
 
-**The artefacts.** Source `clip1_source.wav`, 21.20 s at 16 kHz mono, an excerpt
-taken at source offsets 8.0–29.2 s. Output `clip1_rendered.wav`, 14.61 s at
-22050 Hz, Piper `en_GB-cori-high`.
+Decision. The words land in an editable box. Nothing is spoken until the person taps Speak. A suggested correction is shown beside their words and never applied or spoken on its own. "Show on screen" displays the words full size, for a noisy room or when speech fails.
 
-**Rejected.** Running the clip through the live pipeline "because it is more
-honest". It is not more honest — the pipeline it would run is the same pipeline
-the audience watches run live in beat 2, thirty seconds later, on unscripted
-speech. Beat 2 is the proof. Beat 1 is the argument, and an argument should not
-be able to crash.
+Why. Even with the guard, Whisper mishears. In v1 it heard "help" as "hell" on a real clip and added a sentence nobody said; no filter can catch that. The person is the only reliable check, and one tap is a small price for never being misquoted.
 
----
+Rejected. Speaking automatically after each recording, as v1 did. It cuts against review, and on iPhone speech that does not start inside a tap needs a workaround that has not been tested. It can come back after the phone checks if users want it.
 
-## 7. Never pass `initial_prompt` to Whisper
+Also. While the microphone is open, the screen reader live region stays silent and the record button's label changes before the microphone starts. A spoken announcement would be picked up by the microphone and transcribed as the person's words.
 
-**Decision.** `initial_prompt` is not passed. Ever. Along with it:
-`vad_filter=False` and `condition_on_previous_text=False`.
+## 4. No voice cloning
 
-**Why.** Our own notes used to *recommend*
-`initial_prompt="A person speaking softly in a quiet voice."`, on the reasonable
-theory that it would bias the model toward quiet speech. Measured on the real
-demo clip today, it did two things:
+Decision. Vokal speaks with voices the device already has (in the app) or a stock Piper voice (in Python). Nobody's voice is cloned.
 
-1. Whisper **emitted the prompt itself as a transcript segment** — the device
-   would have spoken the prompt out loud as though the user had said it.
-2. Whisper **lost roughly 30 seconds of real speech** from the same clip.
+Why. With no cloning there is no voice sample to protect, no vendor holding a disabled person's recording, and no consent question to manage.
 
-Removing it fixed both, in the same run. It is not a tuning knob; it is a
-foot-gun shaped like a tuning knob, and it was in our own documentation, which is
-why it is written down here rather than fixed quietly.
+Rejected. Cloning a presenter's voice for the v1 demo, with consent, through a hosted voice service. It was defensible, but it brought back a cloud dependency, an account and a key for a small gain.
 
-`vad_filter=False` because the finger does the segmentation — the pad is held for
-exactly the utterance — and VAD trims quiet speech, which is the entire point of
-this product. `condition_on_previous_text=False` because conditioning turns one
-hallucinated segment into a cascade of them.
+Later, not built. Voice banking: someone who expects to lose their voice records it while they can, and the device later speaks in it.
 
-**Rejected.** Tuning the prompt into something safer. Any prompt can be emitted
-as output; the failure is structural, not a matter of wording.
+## 5. Local voices
 
----
+Decision. The app uses the browser's speech voices, lists local ones first, and labels any voice that "sends text online to speak". The Python package uses Piper (`en_GB-cori-high` by default), loaded once and kept in memory.
 
-## 8. The hallucination guard is mandatory
+Why. A local voice works offline, has no key, quota or outage, and costs nothing to use.
 
-**Decision.** Every transcript passes a filter before anything is spoken:
+Rejected. A hosted voice service. v1 started with ElevenLabs and removed it for these reasons.
 
-- drop any segment with `no_speech_prob > 0.6`;
-- strip a trailing or standalone blocklist, case- and punctuation-insensitive:
-  `thank you`, `thanks for watching`, `please subscribe`, `you`, `bye`,
-  `thanks`, `subtitles by`, `amara.org`, `www.`;
-- if nothing survives, **return empty**, caption it `(didn't catch that)`, and
-  speak nothing.
+Measured with the Python package on the laptop (2026-10-14, one run each, writing to a WAV file): `en_GB-cori-high` took 4.6 s to load, including importing Piper and ONNX Runtime, then 841 ms to synthesise 2.21 s of audio. `en_GB-alba-medium` synthesised 3.53 s of audio in 256 ms.
 
-**Why.** Whisper invented **"Thank you."** on trailing silence in our real demo
-clip today. Those phrases are subtitle-corpus artefacts — the model has seen
-thousands of hours of video that ends with someone thanking you for watching —
-and it emits them confidently on near-silence. Near-silence is precisely what
-this product records: the premise is a person too quiet to be heard.
+Cost. Piper and most device voices sound synthetic. `cori-high` was picked by ear in v1 from four installed voices.
 
-This matters more here than in any other Whisper application. **This device
-speaks on behalf of someone who cannot correct it.** If it says a word they did
-not say, they may not be able to interrupt, deny it, or explain. A fabricated
-sentence is worse than a slow one and much worse than an empty one.
+## 6. Speech to text on the device, in the browser
 
-**Rejected.** Filling an empty result with something plausible — "sorry, could
-you repeat that?" — in the user's stead. That is inventing speech for a person
-who cannot object, which is the exact failure the guard exists to prevent. The
-honest caption is `(didn't catch that)`, addressed to the *user*, and it speaks
-nothing.
+Decision. Whisper runs in the browser through transformers.js and ONNX Runtime Web. Nothing downloads until the person taps Download, because phone data costs money. After one download the app works offline.
 
-**Rejected.** Trusting the guard on the clip beat. See decision 6: that
-transcript is checked by a human and frozen.
+Why.
+- Audio is the most sensitive thing Vokal touches. If it never leaves the phone, there is nothing to leak, store or hand to a vendor.
+- It works with no signal, which matters for a device someone relies on to speak.
+- There is no server to run or pay for, and one static site serves iPhone and Android without app stores.
+- The custom model setting is the place a fine-tuned model plugs in without a code change. Loading one through it has not been tried yet.
 
----
+Rejected.
+- A cloud transcription API. The earlier phone prototype sent the recording to a hosted model (Gemini). That needs a network, a key and trust in a provider for every word someone says.
+- A laptop doing the work, as in v1. It only works with a laptop nearby.
+- A native app for now. It means two code bases and store review. If browser runtimes turn out too slow or too heavy on phones, step 5 compares native runtimes such as whisper.cpp.
 
-## 9. Raw PCM on the wire, not WAV, not multipart
+Cost. A 43.5 MB download for the default model, plus the speech runtime (26.9 MB, fetched from cdn.jsdelivr.net and cached). Speed and memory on phones are not measured yet. If loading a model crashes the tab, the app notices on the next launch and offers the smaller model. The stored marker this relies on is unit-tested, but the path has not been triggered on a real device yet (phone checklist, item 10).
 
-**Decision.** `POST /utterance` takes raw 16 kHz 16-bit signed little-endian mono
-PCM as the body, with `Content-Type: application/octet-stream` and the sample
-rate in a header.
+## 7. WebAssembly by default, WebGPU only when chosen
 
-**Why.** That is byte-for-byte what is already sitting in `audBuf` after
-`audioStop()`. Zero conversion, zero extra allocation, and nothing to get wrong
-at 3 a.m. `audio.h` has a `wavHeader()` helper and we still do not use it: a
-44-byte RIFF header would mean either a second buffer or a two-part send, to
-satisfy a parser we also control.
+Decision. The app runs Whisper on WebAssembly unless the person picks WebGPU in Settings.
 
-**Rejected.** `multipart/form-data` — has to be hand-rolled on an ESP32 and every
-boundary bug costs an hour. Base64 — 33% more bytes on the slowest link in the
-system. A WAV header — real cost, no benefit, because we own the server.
+Why. For `tiny.en`, WebGPU downloads almost three times as much (122.3 MB against 43.5 MB), and nothing has been measured on a phone. On the laptop the speed comparison has gone both ways. All of these runs used synthetic speech in headless Edge 155, WebAssembly on one thread, and WebGPU on the integrated Intel UHD graphics with an fp32 encoder and a q4 decoder:
 
-**Note.** The original README recommended preferring an STT API that accepts a
-raw body over one requiring multipart. That insight is why `PROTOCOL.md` looks
-like this; we just took it further, because owning the server means we can pick
-the body format the board can send for free.
+- A minimal test page that loads the same transformers.js 4.3.0 build and the same pinned model files as the app (not the app itself), 14 October 2026, with a 5.24 s sentence. `tiny.en` q8 on WebAssembly took 1.5 to 2.3 s and `base.en` 4.2 to 5.6 s. `tiny.en` on WebGPU took 2.0 to 2.3 s after the first call (10.6 s on the first visit, 3.8 s on the second). Loading from the cache took 1.6 s for `tiny.en`, 3.1 s for `base.en` and 2.2 s for `tiny.en` on WebGPU.
+- The app's own browser test, 14 October 2026, on battery power with other programs open: `tiny.en` took 4.9 to 5.8 s for the 3.16 s sentence on WebAssembly, and 3.0 to 3.5 s on WebGPU.
+- The app's own browser test, 15 October 2026, on mains power: `tiny.en` took 3.1 to 3.9 s for the 3.16 s sentence on WebAssembly, and 1.8 to 1.9 s on WebGPU after a first call of 5.6 s. The full table is in the README.
 
----
+So in the app WebGPU was faster on this laptop, while on the test page it was not. The app was also slower than the test page on the same laptop, for a reason not found yet. Step 5 repeats the comparison on phones.
 
-## 10. Buffer the whole utterance, then POST — not chunked streaming
+GitHub Pages does not let a site set the headers that allow more WebAssembly threads (cross-origin isolation). A service worker can add them, as coi-serviceworker does, but every file from huggingface.co and cdn.jsdelivr.net would then have to load under those rules too, and that has not been tried. With those headers on the same test page, `tiny.en` took 1.0 to 1.5 s on 4 threads. The app itself has not been run that way; `node server/server.mjs --isolate` sends the headers for a local try.
 
-**Decision.** Capture into PSRAM while the pad is held; on release, send the
-whole thing in one `POST`.
+Rejected for now. Picking WebGPU automatically when the browser has it. It may become automatic after step 5, with numbers from real phones.
 
-**Why.** `audBuf` is already a 2 MB PSRAM buffer that holds 65 seconds, allocated
-once in `audioBegin()` and never freed, and `audioStart()` is a pure pointer
-reset — so unlimited back-to-back captures are free with no leak and no realloc.
-A 3-second utterance is ~96 KB and uploads in well under a second. `HTTPClient`
-already has `int POST(uint8_t*, size_t)`, which streams the body out in chunks
-from PSRAM without ever copying it into internal heap.
+## 8. Optional suggestions run on a server the person controls, off the device
 
-**Rejected.** Chunked or streaming upload during capture. It would shave a few
-hundred milliseconds off a budget we already meet, in exchange for partial-send
-failure states, a server that has to handle a truncated stream, and debugging on
-the least proven code in the repo.
+Decision. Correction by a language model is optional and off by default. The person points the app at their own Vokal server (`server/`), which calls a hosted model (Gemma through the Gemini API) or any OpenAI-compatible server, such as llama.cpp or Ollama on the same computer (neither tried yet). Only text is sent: the words on screen and the saved phrases recorded with the current speech model.
 
-**Also rejected.** Sending via `httpPostJson()`. It hardcodes `Content-Type:
-application/json` and takes a `const String&` — 480 KB in an Arduino String needs
-internal heap we do not have (~300 KB total) and fails outright. The fix is a
-sibling function that takes a raw pointer, not a change to the existing one:
-`httpPostJson` has other callers and no reason to grow a mode switch.
+Why.
+- The models used so far are far too large for a phone, and a provider key cannot sit in a public web page, where anyone could read it.
+- It is slow. With hosted Gemma (`gemma-4-26b-a4b-it`), called from a laptop in September 2026, the earlier prototype took up to 25 s per suggestion. So a suggestion never blocks Speak; it arrives later or not at all.
+- A language model can invent words, the exact failure the guard exists to stop. Before replying, the server refuses a suggestion that adds or removes a negation, changes a number word or a digit group, or changes more than 30% of the words. Known gaps: names, pronouns and tense are asked for in the prompt but not checked, and one swapped word within the limit passes ("water" to "warfarin"). The person's review is the real safeguard.
 
----
+Access. A request from the same computer needs no key. Any other request, including one through a tunnel, needs the server key (`VOKAL_ACCESS_TOKEN`). The rule looks at each request rather than the listening address, because a tunnel runs on the same computer and connects from loopback.
 
-## 11. Plain HTTP, no TLS
+Rejected.
+- Calling the provider straight from the browser with a key.
+- Applying a suggestion automatically.
+- Retrying a failed provider call. The server gives up at 45 s, before the app's own 50 s limit.
 
-**Decision.** `http://<VOKAL_HOST>:8000`, no certificates, no
-`WiFiClientSecure`.
+## 9. The phrase bank is never a Whisper prompt
 
-**Why.** A TLS handshake on the S3 costs latency out of the budget, and there is
-nothing secret on the wire: it is a laptop and a dev board on a phone hotspot,
-exchanging a sentence the presenter is about to say out loud. `net.h` already
-routes `https` URLs through `tls.setInsecure()`, which is unverified encryption —
-the worst of both, the cost of a handshake with none of the guarantee. Plain
-`http` takes the `WiFiClient` branch.
+Decision. The person's saved phrases are used after transcription, by the optional suggestion server, never as a prompt to Whisper.
 
-**Rejected.** HTTPS with `setInsecure()`. Rejected precisely because it looks
-responsible and is not.
+Why. Decision 1: a prompt can come back as speech. Each phrase also records which model heard it (id, revision, precision, device) and how it was captured (format, bitrate, sample rate, voice processing), and only phrases from the current model are sent. Step 4 needs like-for-like pairs to say whether repair helps.
 
-**Consequence, and it is now a stronger one.** No API key crosses this link
-because **there is no API key anywhere in the project**. Both models are local.
-The board only ever knows an IP, and the only thing on the wire is audio moving
-between two devices in the same room.
+## 10. No build step, and everything pinned
 
----
+Decision. The app is plain ES modules with relative URLs, served as static files from any sub-path. transformers.js 4.3.0 is served from the app's own folder, byte for byte: `npm run vendor --prefix app` downloads the pinned build and checks its SHA-256, and a test checks it again. The build is fetched rather than committed because it is 580 KB of someone else's minified code, and because GitHub's secret scanner reads one of its minified strings as an API key. The built-in models are pinned to Hugging Face commit hashes, and a custom model's branch is resolved to a commit when it downloads. The service worker's cache name comes from a hash of the app's files, so a changed file always gets a fresh cache.
 
-## 12. `GET /state` polled at ~3 Hz, not a push channel
+Why. What runs is exactly what was tested, with no bundler and no drift in a dependency or a model between visits.
 
-**Decision.** The board polls `/state` a few times a second and renders whatever
-it says. `seq` increments on every caption change so the board can tell "same
-caption again" from "new caption with the same text" without diffing strings.
+Rejected. A bundler, and loading the library from a CDN at run time (a page script from another host, and its version can move). The ONNX Runtime WebAssembly file is too big to vendor (26.9 MB), so it still comes from cdn.jsdelivr.net, at the exact version the pinned library names.
 
-**Why.** Polling a JSON endpoint is roughly fifteen lines against `httpGet()`,
-which already exists. `/state` must answer in under 50 ms and never block on the
-pipeline, which is a server-side rule that costs nothing to keep.
+## 11. No real recordings, from v2 on
 
-**Rejected.** WebSockets or SSE. Another library, another connection state
-machine, another thing to reconnect after the hotspot hiccups — to save latency
-on a status field that only drives a colour.
+Decision. Test audio is synthetic speech from Windows System.Speech, or silence, noise and tones made by the tests. A CI job fails if any audio file other than `app/tests/fixtures/*.wav`, any `.env` file other than an example, or a `secrets.h` is committed.
 
----
+Why. A recording of someone's voice is personal data, and the people Vokal is for are a vulnerable group. TORGO clips also stay off the repository (see `ml/README.md`).
 
-## 13. The board owns `listening`; the server owns everything else
+## 12. Environments and model weights stay outside OneDrive
 
-**Decision.** The instant the pad goes down, the board sets its ring red locally.
-It does not wait for a round trip. `processing`, `speaking` and `error` come from
-the server.
+Decision. Python virtual environments, Piper voices and model weights live outside the repository folder, on a short path.
 
-**Why.** The one thing that must feel instant is the response to a press. A round
-trip before the ring changes colour makes the device feel broken even when it is
-working perfectly. It also means the board still does something in your hand with
-the network completely dead — which is the last rung of the demo failure ladder.
+Why. Two Windows problems, both hit in practice. OneDrive syncing thousands of small files while pip writes them produced packages that imported and then failed at run time. And with long paths off, pip could not install numpy under a deep folder (WinError 206). The local server's `--models` option serves weights from any folder for this reason.
 
----
+## v1 hardware lessons
 
-## 14. Push-to-talk on the touch pad, not the IMU
+The ESP32-S3 puck is gone, but these cost real debugging time and apply to any small device. Most of the board work behind them is by [@stosifian](https://github.com/stosifian).
 
-**Decision.** Hold a large on-screen pad. `touchDown` is the held state,
-edge-detected against the previous frame.
+- USB serial writes block when nothing is reading. With no serial monitor attached, the transmit buffer filled and every `printf` stalled the main loop for the full timeout: the screen updated every few seconds and touch felt dead. It only behaved while a monitor was attached, which is exactly the condition that hid the bug during development. The fix was `Serial.setTxTimeoutMs(0)`, which drops debug output instead of blocking, plus an `availableForWrite()` check before writes on hot paths.
+- The IMU's default low-pass filter erased taps. On the QMI8658 it sits at 2.66% of the output data rate, a 3.3 Hz corner at 125 Hz, which removes a tap transient completely. The fix was to turn the filter off and raise the rate to 1000 Hz. Tap detection then keyed off the high-passed vertical axis plus pulse width, because amplitude alone cannot tell a finger strike from picking the device up.
+- The I2S receive ring kept old audio. The capture task stops reading between recordings, but the I2S channel keeps running, so the first reads of a new recording return sound from before the press. For a meeting recorder that is invisible; for a short phrase it is not. The capture task also only checked the stop flag at the top of its loop, so the byte count could still grow for one read after stop. The fix designed for push-to-talk was to drain the ring before arming, and to have the capture task set an idle flag that the sender waits for. A fixed delay was rejected: it works until the chunk size changes. The push-to-talk firmware was not finished, so this fix is not in the tagged code.
+- Touch was sampled at 200 Hz and the screen painted at 10 Hz, so a click flag that lasted one sample was usually missed. Clicks are latched until the paint pass has seen them.
+- Capture ran in its own task on one core and the screen on the other, so neither could starve the other.
 
-**Why.** IMU double-tap requires `imuQuiet` — slow |a| under 0.08 g and slow gyro
-under 12 dps held for 250 ms — so it deliberately rejects taps while the device
-is being held and moved. That is correct for a puck sitting on a table and
-exactly wrong for something in your hand at your mouth.
-
-**Rejected.** `touchReleased` as the trigger. It is a one-frame click event
-latched for the paint pass, not a hold. And `touchPressed` must never be read
-from a screen function: it is set at 200 Hz and cleared on the next sample, so a
-10 Hz paint pass essentially never observes it. Both facts are recorded in
-`ui_kit.h:12-31` and both were real bugs.
-
----
-
-## 15. Drain the I2S ring and wait for an idle flag around every capture
-
-**Decision.** `audioStart()` drains the I2S RX ring before arming, and the
-capture task sets a `volatile bool` when it takes the idle branch; the sender
-waits for that flag before snapshotting `audLen`.
-
-**Why.** Two hazards that did not matter for a meeting recorder and are fatal for
-push-to-talk. The RX channel is started once and never stopped, and nothing
-drains it while `!audRecording`, so every capture begins with audio from *before*
-the press — for a 60-second meeting that is invisible, for a 3-second whisper it
-is a third of the clip. And `audLen` keeps growing for up to ~64 ms after
-`audioStop()` returns, because the task only tests the flag at the top of its
-loop and commits whatever chunk it is already inside.
-
-**Rejected.** A fixed `delay(100)` after `audioStop()` as *the* mechanism. It
-works, it is a guess, and it silently stops working if `AUD_CHUNK` changes. A
-flag the task sets is four lines and is correct by construction.
-`VOKAL_SETTLE_MS` (200 ms) still exists, but only as the ceiling on how long the
-sender will wait for `audIdle` — a bound on a bug, not a substitute for the
-signal.
-
-**Also.** `audioStart()` (`audio.h:155`) zeroes `waveLvl`, `waveHead` and
-`audPeak` alongside `audLen`, because the UI reads all of them and the meter
-otherwise opens showing the previous utterance's bars. `markCount` is the one
-thing it still leaves alone — that is puck state, and `ui_puck.h:57` clears it
-by hand.
-
----
-
-## 16. `POST /replay` as the deterministic fallback
-
-**Decision.** An endpoint that re-runs the last successful result — audio and
-caption — with no STT, no TTS and no network round trip. 409 if nothing has been
-spoken yet.
-
-**Why.** Venue wifi, a hotspot that reassigns addresses, a laptop that decides to
-update, a room too loud for the mic: on the day, the pipeline is the least
-reliable thing in the building. `/replay` turns a dead demo into a slightly
-apologetic one, and it costs a cached buffer. It is also the fastest possible
-rehearsal loop — it exercises the audio path end to end without spending a model
-run.
-
-**Consequence.** The full live beat must be run once in rehearsal so the cache is
-warm. A 409 on stage is worse than no fallback at all, because you will have
-promised it.
-
----
-
-## 17. The Python venv lives outside the repo, at `C:\vokal-venv`
-
-**Decision.** No `.venv` in the repository. The interpreter is
-`C:\vokal-venv\Scripts\python.exe` and every script and document names it
-explicitly. Piper voice models live in `C:\vokal-venv\voices`.
-
-**Why.** Two independent Windows problems, both of which we hit:
-
-1. **`MAX_PATH`.** The repo sits under
-   `C:\Users\<user>\OneDrive\Documents\comp sci projects\vokal\Vokal`. Add
-   `.venv\Lib\site-packages\` and a deeply nested dependency path on top of that
-   and installs fail with truncated or unreadable paths.
-2. **OneDrive sync corrupts `site-packages`.** The repo directory is
-   OneDrive-synced. Sync touching thousands of small files while pip is writing
-   them produced packages that imported and then failed at runtime — the worst
-   kind, because they look installed.
-
-A venv on `C:\` directly is short, and outside the sync root. `.gitignore` keeps
-it moot for the repo either way, but the failure was real and cost time before we
-moved it.
-
-**Related.** The `esp32:esp32` Arduino core and the five vendor libraries have
-the same problem in reverse — the libraries directory *is* under OneDrive
-redirection, which is why every script resolves it with
-`arduino-cli config get directories.user` instead of assuming
-`$HOME/Documents/Arduino/libraries`.
-
----
-
-## Rejected wholesale
-
-Things considered and dropped, so nobody re-proposes them:
-
-- **ElevenLabs, in any form.** See decisions 4 and 5. Faster, free, offline, and
-  no cloning ethics problem. There is no "just for one beat" version of this.
-- **Voice cloning of the presenter, of the person in the clip, of anyone.** The
-  roadmap answer is voice banking, and it is a roadmap answer.
-- **LVGL, and LovyanGFX.** The panel is driven by Waveshare's Arduino_GFX fork
-  over QSPI; LovyanGFX's QSPI path is not proven on this board and the shim in
-  `display.h` already gives the UI the handful of calls it uses. Dead LVGL knobs
-  survive in `config.h` from the attic prototype — they are misleading, not live.
-- **An on-device wake word.** More impressive, and it removes the one thing that
-  makes the device honest: a physical control that only listens when held.
-- **A second board as a receiver.** Doubles the hardware that can fail on stage
-  to remove a laptop the audience never looks at.
-- **Board-side word wrap and a caption history.** First and fourth on the cut
-  list. There is no text-measurement API in the shim — wrapping is `strlen * 6 *
-  size` arithmetic you write yourself — and the laptop speakers already tell the
-  audience what was heard.
-- **Rewriting `config.h` to remove the dead knobs.** Tempting and untimed. They
-  are documented as dead in the README; deleting them touches
-  a file every other header includes, on the day.
+The v1 code is kept at the git tag `v1-esp32-puck`.

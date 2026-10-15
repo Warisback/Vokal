@@ -1,0 +1,7 @@
+# LF everywhere, so the service worker's SHELL_HASH and the vendored
+# library's SHA-256 match on every checkout, whatever core.autocrlf says.
+* text=auto eol=lf
+*.wav binary
+*.png binary
+*.ico binary
+app/vendor/transformers.min.js -text

@@ -1,0 +1,61 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: No recordings, keys or model weights
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tracked files
+        # The only audio allowed is the synthetic fixture in app/tests/fixtures.
+        run: |
+          bad=$( { git ls-files | grep -Ei '\.(wav|mp3|m4a|flac|ogg|oga|opus|webm|aac)$' | grep -Ev '^app/tests/fixtures/[^/]+\.wav$';
+                   git ls-files | grep -Ei '(^|/)\.env(\.|$)' | grep -Ev '(^|/)\.env\.example$';
+                   git ls-files | grep -Ei '(^|/)secrets\.h$';
+                   git ls-files | grep -Ei '\.(onnx|safetensors|pt|ckpt)$'; } || true )
+          if [ -n "$bad" ]; then
+            echo "These files must not be in the repo:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "No recordings, .env files, secrets or model weights are tracked."
+
+  node:
+    name: App and server unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Neither suite needs an install: both use Node's built-in test runner.
+      # The pinned library is fetched and its SHA-256 checked first.
+      - name: Fetch the pinned transformers.js
+        run: npm run vendor --prefix app
+      - name: App unit tests
+        run: npm test --prefix app
+      - name: Server tests
+        run: npm test --prefix server
+
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      # Only pytest is installed, so no model is downloaded. The decoder test
+      # needs faster-whisper and is skipped here.
+      - name: Install
+        run: pip install -e "python[dev]"
+      - name: Python tests
+        run: pytest python/tests

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Vokal writes down what you say, lets you check the words, then says them out loud. Speech to text runs on this device.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Vokal">
+  <title>Vokal</title>
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/support.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell">
+    <header class="top">
+      <p class="brand"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="18"/><path d="M17 27v10M27 18v28M37 23v18M47 29v6"/></svg><span>Vokal</span></p>
+      <button id="settings-open" class="icon-button" type="button" aria-label="Settings" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.6"/><circle cx="15" cy="17" r="2.6"/></svg>
+      </button>
+    </header>
+
+    <div class="notices">
+      <p id="unsupported" class="notice" hidden>This browser cannot run the speech model. You can still type and use Show on screen. Vokal has been tested in Edge on Windows. Safari and Firefox have not been tested yet.</p>
+      <p id="storage-notice" class="notice" hidden>This browser is not saving data. Settings and phrases last for this visit only.</p>
+      <div id="update-banner" class="notice notice-row" hidden>
+        <p>An update is ready.</p>
+        <button id="update-reload" class="button secondary" type="button">Reload</button>
+      </div>
+      <div id="crash-notice" class="notice notice-warn" hidden>
+        <p>Vokal closed while loading the speech model last time. This can happen when a phone runs low on memory.</p>
+        <div class="row">
+          <button id="crash-retry" class="button secondary" type="button">Try again</button>
+          <button id="crash-safe" class="button secondary" type="button">Use the smaller model</button>
+        </div>
+      </div>
+    </div>
+
+    <main id="main" tabindex="-1">
+      <section id="screen-welcome" class="screen welcome" hidden aria-labelledby="welcome-title">
+        <h1 id="welcome-title" tabindex="-1">Your words, <span class="accent">out loud.</span></h1>
+        <ol class="points">
+          <li><span class="point-mark" aria-hidden="true">1</span><span>Say something. Vokal writes down what it heard and can say it out loud for you.</span></li>
+          <li><span class="point-mark" aria-hidden="true">2</span><span>You check the words first. Nothing is spoken until you tap Speak.</span></li>
+          <li><span class="point-mark" aria-hidden="true">3</span><span>It uses a standard speech model. It has not been tested on atypical speech yet.</span></li>
+        </ol>
+        <div class="welcome-actions">
+          <button id="welcome-setup" class="button primary wide" type="button">Set up</button>
+          <button id="welcome-skip" class="button quiet wide" type="button">Skip to talking</button>
+        </div>
+        <div class="privacy">
+          <h2>Your privacy</h2>
+          <p>Speech to text runs on this device. Your recordings are not uploaded or saved.</p>
+          <p>The first time, Vokal downloads the speech model from huggingface.co and the speech runtime from cdn.jsdelivr.net.</p>
+          <p>Voices marked "sends text online to speak" send the words to that voice's provider. Other voices work on this device.</p>
+        </div>
+      </section>
+
+      <section id="screen-setup" class="screen setup" hidden aria-labelledby="setup-title">
+        <p id="setup-progress" class="eyebrow">Step 1 of 4</p>
+        <h1 id="setup-title" tabindex="-1">Set up Vokal</h1>
+
+        <div id="setup-step-home" class="step" hidden>
+          <h2>Add Vokal to your Home Screen</h2>
+          <p>On iPhone, add Vokal to your Home Screen first and set it up there. iOS may keep the home-screen app's data apart from Safari's, so a model downloaded here might have to download again.</p>
+          <ol class="steps-list">
+            <li>Tap Share.</li>
+            <li>Tap Add to Home Screen.</li>
+          </ol>
+          <button id="setup-home-continue" class="button secondary" type="button">Continue in Safari</button>
+        </div>
+
+        <div id="setup-step-model" class="step" hidden>
+          <h2>Download the speech model</h2>
+          <p>Speech to text runs on this device, so the model downloads once. Nothing downloads until you tap Download.</p>
+          <fieldset class="choices">
+            <legend>Speech model</legend>
+            <label class="choice"><input type="radio" name="setup-model" id="setup-model-tiny" value="tiny.en"><span><strong>tiny.en</strong> <span id="setup-model-tiny-size" class="muted"></span><br><span class="muted">Smaller and quicker. Start here.</span></span></label>
+            <label class="choice"><input type="radio" name="setup-model" id="setup-model-base" value="base.en"><span><strong>base.en</strong> <span id="setup-model-base-size" class="muted"></span><br><span class="muted">Larger. Needs more memory.</span></span></label>
+          </fieldset>
+          <p id="setup-model-note" class="help">Plus the speech runtime the first time.</p>
+          <button id="setup-download" class="button primary" type="button">Download</button>
+          <div id="setup-progress-block" class="progress-block" hidden>
+            <progress id="setup-model-progress" max="1" value="0" aria-labelledby="setup-model-progress-text"></progress>
+            <p id="setup-model-progress-text" class="help"></p>
+          </div>
+          <p id="setup-model-status" class="status-line"></p>
+        </div>
+
+        <div id="setup-step-mic" class="step" hidden>
+          <h2>Allow the microphone</h2>
+          <p>Vokal only listens while you hold the button (or, in tap mode, between your two taps), and the recording stays on this device.</p>
+          <button id="setup-mic-allow" class="button primary" type="button">Allow microphone</button>
+          <p id="setup-mic-status" class="status-line"></p>
+          <div id="setup-mic-try" class="try" hidden>
+            <p>Try it: hold the button and say something. The bars move when sound reaches Vokal.</p>
+            <canvas id="setup-mic-meter" class="meter" width="320" height="48" aria-hidden="true"></canvas>
+            <button id="setup-mic-test" class="button secondary" type="button" aria-pressed="false" aria-labelledby="setup-mic-test-label"><span id="setup-mic-test-label">Hold to test</span></button>
+          </div>
+        </div>
+
+        <div id="setup-step-phrases" class="step" hidden>
+          <h2>Your phrases</h2>
+          <p>Record a phrase and confirm the words you meant. Phrases are kept in this browser. If you turn suggestions on later, they show the suggestion server how the speech model hears you.</p>
+          <p id="setup-phrase-count" class="help"></p>
+          <div id="setup-phrase-choices" class="phrase-choices">
+            <button class="button secondary phrase-choice" type="button" data-phrase="Water, please.">Water, please.</button>
+            <button class="button secondary phrase-choice" type="button" data-phrase="A coffee without sugar.">A coffee without sugar.</button>
+            <button class="button secondary phrase-choice" type="button" data-phrase="Give me a little time.">Give me a little time.</button>
+            <button class="button secondary phrase-choice" type="button" data-phrase="">My own phrase</button>
+          </div>
+          <div id="setup-phrase-panel" class="panel phrase-panel" hidden>
+            <p class="eyebrow" id="setup-phrase-prompt">Say this phrase</p>
+            <p id="setup-phrase-target" class="phrase-target"></p>
+            <div class="mini-capture">
+              <canvas id="setup-phrase-meter" class="meter" width="320" height="40" aria-hidden="true"></canvas>
+              <button id="setup-record" class="record-button small" type="button" aria-pressed="false" aria-labelledby="setup-record-label">
+                <svg class="mic" viewBox="0 0 32 32" aria-hidden="true"><rect x="11" y="4" width="10" height="17" rx="5"/><path d="M7 15v2a9 9 0 0 0 18 0v-2M16 26v4M11 30h10"/></svg>
+                <span class="stop" aria-hidden="true"></span>
+              </button>
+              <p id="setup-record-label" class="record-label">Hold to talk</p>
+              <p id="setup-record-timer" class="timer" aria-hidden="true" hidden></p>
+              <button id="setup-record-cancel" class="button quiet" type="button" hidden>Cancel</button>
+            </div>
+            <p id="setup-phrase-status" class="status-line"></p>
+            <div id="setup-empty" class="empty-outcome" hidden>
+              <p id="setup-empty-message"></p>
+              <div class="row">
+                <button id="setup-empty-yes" class="button primary" type="button" hidden>Yes, use it</button>
+                <button id="setup-empty-no" class="button secondary" type="button" hidden>No</button>
+                <button id="setup-use-anyway" class="button secondary" type="button" hidden>Use it anyway</button>
+              </div>
+            </div>
+            <div id="setup-heard" hidden>
+              <p class="heard-line"><span class="muted">What was heard:</span> <span id="setup-heard-text"></span></p>
+              <label for="setup-meant">The words you meant</label>
+              <textarea id="setup-meant" rows="2" maxlength="300" spellcheck="true"></textarea>
+              <label class="check"><input id="setup-confirm" type="checkbox"><span>These are the words I meant</span></label>
+              <button id="setup-save" class="button primary" type="button" disabled>Save phrase</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="setup-nav">
+          <button id="setup-next" class="button secondary" type="button">Next</button>
+          <button id="setup-skip" class="button quiet" type="button">Skip this step</button>
+          <button id="setup-finish" class="button quiet" type="button">Finish for now</button>
+        </div>
+      </section>
+
+      <section id="screen-talk" class="screen talk" hidden aria-labelledby="talk-title">
+        <div class="talk-head">
+          <h1 id="talk-title" tabindex="-1">Talk</h1>
+          <p class="status"><span id="status-dot" class="dot" data-state="loading" aria-hidden="true"></span><span id="status-text">Starting up</span></p>
+        </div>
+
+        <div class="talk-grid">
+          <div class="capture-card">
+            <div id="model-panel" class="model-panel" hidden>
+              <p id="model-message"></p>
+              <button id="model-download" class="button primary" type="button" hidden>Download</button>
+              <div id="model-progress-block" class="progress-block" hidden>
+                <progress id="model-progress" max="1" value="0" aria-labelledby="model-progress-text"></progress>
+                <p id="model-progress-text" class="help"></p>
+              </div>
+              <div id="model-fallback" class="row" hidden>
+                <button id="model-use-wasm" class="button secondary" type="button">Use the processor instead</button>
+                <button id="model-fallback-download" class="button primary" type="button" hidden>Download now</button>
+              </div>
+            </div>
+            <canvas id="talk-meter" class="meter" width="320" height="56" aria-hidden="true"></canvas>
+            <button id="record-button" class="record-button" type="button" aria-pressed="false" aria-labelledby="record-label" aria-describedby="record-hint">
+              <svg class="mic" viewBox="0 0 32 32" aria-hidden="true"><rect x="11" y="4" width="10" height="17" rx="5"/><path d="M7 15v2a9 9 0 0 0 18 0v-2M16 26v4M11 30h10"/></svg>
+              <span class="stop" aria-hidden="true"></span>
+            </button>
+            <p id="record-label" class="record-label">Hold to talk</p>
+            <p id="record-timer" class="timer" aria-hidden="true" hidden>0:00 / 0:30</p>
+            <p id="record-hint" class="hint">Start speaking when it says Listening. Up to 30 seconds.</p>
+            <button id="record-cancel" class="button quiet" type="button" hidden>Cancel</button>
+          </div>
+
+          <div class="work">
+            <div id="error-panel" class="panel panel-error" hidden>
+              <p id="error-message"></p>
+              <div class="row">
+                <button id="error-retry" class="button secondary" type="button" hidden>Try again</button>
+                <button id="error-use-anyway" class="button secondary" type="button" hidden>Use it anyway</button>
+              </div>
+            </div>
+
+            <div id="confirm-panel" class="panel" hidden>
+              <p id="confirm-question" class="question"></p>
+              <div class="row">
+                <button id="confirm-yes" class="button primary" type="button">Yes, use it</button>
+                <button id="confirm-no" class="button secondary" type="button">No</button>
+              </div>
+            </div>
+
+            <section id="review-panel" class="panel review" hidden aria-labelledby="review-label">
+              <label id="review-label" for="review-text">Words to speak</label>
+              <textarea id="review-text" rows="3" maxlength="1000" spellcheck="true" aria-describedby="review-help"></textarea>
+              <p id="review-help" class="help">Check every word. You can change anything before you speak.</p>
+              <p id="removed-chip" class="chip" hidden><span id="removed-chip-text"></span><button id="removed-add-back" class="button quiet small" type="button">Add back</button></p>
+              <div id="suggestion" class="suggestion" hidden>
+                <p><span class="muted">Suggested:</span> <span id="suggestion-text"></span></p>
+                <div class="row">
+                  <button id="suggestion-use" class="button secondary" type="button">Use suggestion</button>
+                  <button id="suggestion-keep" class="button quiet" type="button">Keep mine</button>
+                </div>
+              </div>
+              <p id="suggestion-note" class="help" hidden></p>
+              <div class="actions">
+                <button id="speak-button" class="button primary speak" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 4-6 5H2v6h3l6 5V4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>
+                  <span>Speak</span>
+                </button>
+                <button id="show-button" class="button secondary" type="button">Show on screen</button>
+                <button id="clear-button" class="button quiet" type="button">Clear</button>
+              </div>
+            </section>
+
+            <details id="heard-details" class="heard" hidden>
+              <summary>What was heard</summary>
+              <p id="heard-raw" class="heard-raw"></p>
+              <ul id="heard-removed" class="removed-list"></ul>
+              <button id="heard-use-anyway" class="button secondary" type="button" hidden>Use it anyway</button>
+              <dl id="heard-facts" class="facts" hidden></dl>
+            </details>
+
+            <div id="speech-panel" class="panel speaking" hidden>
+              <p id="speech-status" class="speaking-line"><span class="dot" data-state="speaking" aria-hidden="true"></span>Speaking</p>
+              <p id="speech-timing" class="help" hidden></p>
+              <div class="row">
+                <button id="speech-stop" class="button secondary" type="button">Stop</button>
+                <button id="speech-again" class="button quiet" type="button">Say it again</button>
+              </div>
+            </div>
+
+            <details id="type-details" class="more">
+              <summary>Type instead</summary>
+              <form id="type-form" class="type-form">
+                <label for="type-text">What would you like to say?</label>
+                <textarea id="type-text" rows="3" maxlength="1000"></textarea>
+                <button id="type-submit" class="button secondary" type="submit">Check these words</button>
+              </form>
+            </details>
+
+            <details id="file-details" class="more">
+              <summary>Transcribe an audio file</summary>
+              <div class="file-body">
+                <p class="help">For testing and demos. The file is read on this device and is not uploaded. Up to 30 seconds and 10 MB.</p>
+                <label for="file-input">Audio file</label>
+                <input id="file-input" type="file" accept="audio/*,.wav,.mp3,.m4a,.webm,.ogg,.flac">
+              </div>
+            </details>
+
+            <section id="recent-panel" class="recent" hidden aria-labelledby="recent-title">
+              <h2 id="recent-title">Said this visit</h2>
+              <ul id="recent-list" class="recent-list"></ul>
+              <p class="help">Kept in memory for this visit only. Tapping one puts it back in review.</p>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>Speech to text on this device. Nothing is spoken until you tap Speak.</p>
+      <p id="foot-version" class="muted"></p>
+    </footer>
+  </div>
+
+  <dialog id="settings-dialog" class="sheet" aria-labelledby="settings-title">
+    <div class="sheet-head">
+      <h2 id="settings-title">Settings</h2>
+      <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <section class="sheet-section" aria-labelledby="set-model-title">
+        <h3 id="set-model-title">Speech model</h3>
+        <label for="set-model">Model</label>
+        <select id="set-model">
+          <option value="tiny.en">tiny.en</option>
+          <option value="base.en">base.en</option>
+          <option value="custom">Custom model</option>
+        </select>
+        <div id="set-custom-block" hidden>
+          <label for="set-custom">Custom model</label>
+          <input id="set-custom" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="owner/name or models/folder" aria-describedby="set-custom-help set-custom-error">
+          <p id="set-custom-help" class="help">A public model on huggingface.co, written owner/name or owner/name@revision. Or a folder the Vokal server shares from its models folder, written models/name.</p>
+          <p id="set-custom-error" class="field-error" hidden></p>
+          <p id="set-custom-resolved" class="help" hidden></p>
+          <button id="set-custom-check" class="button quiet" type="button" hidden>Check for a newer version</button>
+        </div>
+        <label for="set-device">Device</label>
+        <select id="set-device" aria-describedby="set-device-help">
+          <option value="wasm">Processor (WebAssembly)</option>
+          <option value="webgpu">Graphics chip (WebGPU)</option>
+        </select>
+        <p id="set-device-help" class="help">The processor is the default. The graphics chip needs a larger download (122.3 MB for tiny.en, against 43.5 MB).</p>
+        <label for="set-dtype">Precision</label>
+        <select id="set-dtype" aria-describedby="set-dtype-help">
+          <option value="auto">Automatic</option>
+          <option value="q8">q8</option>
+          <option value="fp16">fp16</option>
+          <option value="fp32">fp32</option>
+          <option value="q4">q4</option>
+          <option value="fp32+q8">fp32 encoder, q8 decoder</option>
+        </select>
+        <p id="set-dtype-help" class="help">Automatic is the tested choice. The others have not been tested in this app yet.</p>
+        <dl class="facts">
+          <div><dt>Status</dt><dd id="set-model-status">Checking</dd></div>
+          <div><dt>Download size</dt><dd id="set-model-size"></dd></div>
+          <div><dt>Storage used</dt><dd id="set-storage-used">Unknown</dd></div>
+          <div><dt>Storage kept by the browser</dt><dd id="set-storage-kept">Unknown</dd></div>
+        </dl>
+        <div id="set-progress-block" class="progress-block" hidden>
+          <progress id="set-progress" max="1" value="0" aria-labelledby="set-progress-text"></progress>
+          <p id="set-progress-text" class="help"></p>
+        </div>
+        <p id="set-model-message" class="status-line"></p>
+        <div class="row">
+          <button id="set-download" class="button primary" type="button">Download</button>
+          <button id="set-forget" class="button quiet danger" type="button">Remove from this device</button>
+        </div>
+      </section>
+
+      <section class="sheet-section" aria-labelledby="set-speaking-title">
+        <h3 id="set-speaking-title">Speaking</h3>
+        <label for="set-voice">Voice</label>
+        <select id="set-voice"><option value="">Default voice</option></select>
+        <p id="set-voice-help" class="help">Voices marked "sends text online to speak" send the words to that voice's provider. Other voices work on this device.</p>
+        <label for="set-rate">Speed <output id="set-rate-value" for="set-rate">1.0</output></label>
+        <input id="set-rate" type="range" min="0.5" max="1.5" step="0.1" value="1">
+        <button id="set-voice-test" class="button secondary" type="button">Try this voice</button>
+      </section>
+
+      <section class="sheet-section" aria-labelledby="set-recording-title">
+        <h3 id="set-recording-title">Recording</h3>
+        <fieldset class="choices">
+          <legend>How the button works</legend>
+          <label class="choice"><input type="radio" name="set-mode" id="set-mode-hold" value="hold"><span>Press and hold</span></label>
+          <label class="choice"><input type="radio" name="set-mode" id="set-mode-tap" value="tap"><span>Tap to start, tap to stop<br><span class="muted">Tap mode may suit screen reader users and anyone who finds holding hard.</span></span></label>
+        </fieldset>
+        <label class="check"><input id="set-processing" type="checkbox"><span>Browser voice processing (echo cancellation, noise suppression and automatic gain)</span></label>
+      </section>
+
+      <section class="sheet-section" aria-labelledby="set-phrases-title">
+        <h3 id="set-phrases-title">Your phrases</h3>
+        <p class="help">Your phrases are kept in this browser only. Export them to keep a copy or to move them to another browser.</p>
+        <p id="phrases-summary" class="status-line"></p>
+        <ul id="phrases-list" class="phrase-list"></ul>
+        <p id="phrases-other" class="help" hidden></p>
+        <div class="row wrap">
+          <button id="phrases-add" class="button secondary" type="button">Add a phrase</button>
+          <button id="phrases-export" class="button secondary" type="button">Export phrases</button>
+          <button id="phrases-import" class="button secondary" type="button">Import phrases</button>
+          <button id="phrases-clear" class="button quiet danger" type="button">Remove all</button>
+        </div>
+        <input id="phrases-import-file" type="file" accept=".json,application/json" aria-label="Phrases file to import" hidden>
+        <p id="phrases-message" class="status-line"></p>
+      </section>
+
+      <section class="sheet-section" aria-labelledby="set-suggest-title">
+        <h3 id="set-suggest-title">Suggestions</h3>
+        <p id="set-server-state" class="status-line">Suggestions are off.</p>
+        <label for="set-server">Suggestion server address</label>
+        <input id="set-server" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="Leave empty to keep suggestions off" aria-describedby="set-server-help set-server-error">
+        <p id="set-server-help" class="help">The address of your own Vokal server, for example ./ when it serves this page, or an https address.</p>
+        <p id="set-server-error" class="field-error" hidden></p>
+        <label for="set-key">Server key</label>
+        <input id="set-key" type="password" autocomplete="off" spellcheck="false" maxlength="200" aria-describedby="set-key-help">
+        <p id="set-key-help" class="help">The server key is kept in this browser and sent only to your suggestion server.</p>
+        <button id="set-server-test" class="button secondary" type="button">Test</button>
+        <p id="set-server-result" class="status-line"></p>
+      </section>
+
+      <section class="sheet-section" aria-labelledby="set-about-title">
+        <h3 id="set-about-title">About</h3>
+        <dl class="facts">
+          <div><dt>App version</dt><dd id="about-app"></dd></div>
+          <div><dt>Speech library</dt><dd id="about-lib">Not loaded</dd></div>
+          <div><dt>ONNX Runtime</dt><dd id="about-ort">Not loaded</dd></div>
+          <div><dt>Device</dt><dd id="about-device">Not loaded</dd></div>
+          <div><dt>Threads</dt><dd id="about-threads">Not loaded</dd></div>
+          <div><dt>Model revision</dt><dd id="about-revision">Not loaded</dd></div>
+        </dl>
+        <label class="check"><input id="set-details" type="checkbox"><span>Show details (model, timings, capture and no-speech score) under What was heard</span></label>
+        <p class="help">Speech to text runs on this device. Your recordings are not uploaded or saved. The first time, Vokal downloads the speech model from huggingface.co and the speech runtime from cdn.jsdelivr.net.</p>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="show-dialog" class="show" aria-labelledby="show-text">
+    <p id="show-message" class="show-message" role="alert" hidden></p>
+    <p id="show-text" class="show-text"></p>
+    <button id="show-close" class="button secondary" type="button">Close</button>
+  </dialog>
+
+  <p id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+</body>
+</html>
